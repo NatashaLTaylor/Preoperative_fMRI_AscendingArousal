@@ -1,0 +1,897 @@
+---
+title: "Brain Plots"
+---
+
+```{r }
+#install.packages("ggseg")
+library(ggsegSchaefer)
+library(ggseg)
+library(ggseg3d)
+library(ggplot2)
+library(dplyr)
+library(stringr)
+```
+
+```{r }
+# load in the data
+data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/nbm_combined_fc_sig_plot.csv", header= FALSE)
+
+# load in regions names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+
+label <- schaef_names$ROI.Name
+
+
+# Create a data frame for plotting
+data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$V1[1:400])
+
+# Print the data frame to verify
+View(data_plot)
+
+```
+## Including Plots
+## Plot brain function for 17 Networks
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data_17nets <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) +
+    scale_fill_gradient2(low = "#C03B2B", mid = "white", high = "#0C7D79", midpoint = 0) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+# Save the plot as an SVG file
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data_17nets_alt2 <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) +
+    scale_fill_gradient2(low = "#a58bbd", mid = "white", high = "#9cbe9d", midpoint = 0) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+# Save the plot as an SVG file
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+
+## Plot Brain Alternative Colours
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_17nets_blueorange <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) +
+    scale_fill_gradient2(low = "#f9a340", mid = "white", high =  "#7fb6cc", midpoint = 0) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+# Save the plot as an SVG file
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+
+## Brain plots onto 7 network schaefer 400
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data_7nets <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer7_400, show.legend = TRUE) +
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) +
+    scale_fill_gradient2(low = "#C03B2B", mid = "white", high = "#0C7D79", midpoint = 0) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+# Save the plot as an SVG file
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+
+
+
+## Generate brain plots for the PC results
+```{r}
+#load the data
+data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_diff_del_health_pc_avg_time.csv', header= FALSE)
+# load in regions names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$V1[1:400])
+
+# Print the data frame to verify
+View(data_plot)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot, "mean_diff_del_health_pc_avg_time")
+
+```
+## Need plot of just the Salient Ventral Attentional Networks
+```{r}
+# Initialize data_plot with all zeros
+data_plot <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = rep(0, 400)
+)
+
+# Identify indices for "SalVentAttn" regions
+salvent_par_indices <- which(grepl("SalVentAttn", data_plot$label))
+
+# Replace zeros with corresponding values from data$V1 for "SalVentAttn" regions
+data_plot$SignificantCoefficient[salvent_par_indices] <- data$V1[salvent_par_indices]
+
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot, "mean_diff_del_health_pc_avg_time_salventattn")
+
+```
+## Dorsal Attentional
+```{r}
+data_plot <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = rep(0, 400)
+)
+
+# Identify indices for "SalVentAttn" regions
+dorsattn_par_indices <- which(grepl("DorsAttn", data_plot$label))
+
+# Replace zeros with corresponding values from data$V1 for "SalVentAttn" regions
+data_plot$SignificantCoefficient[dorsattn_par_indices] <- data$V1[dorsattn_par_indices]
+
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot, "mean_diff_del_health_pc_avg_time_dorsattn")
+```
+## Default Mode Networks
+
+```{r}
+data_plot <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = rep(0, 400)
+)
+
+# Identify indices for "SalVentAttn" regions
+default_par_indices <- which(grepl("Default", data_plot$label))
+
+# Replace zeros with corresponding values from data$V1 for "SalVentAttn" regions
+data_plot$SignificantCoefficient[default_par_indices] <- data$V1[default_par_indices]
+
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot, "mean_diff_del_health_pc_avg_time_default")
+```
+
+
+```{r}
+
+# Plot the schaefer17_400 atlas with pastel colors
+bb <-ggplot() +
+  geom_brain(atlas = schaefer17_400, aes(fill = region), show.legend = FALSE) +
+  scale_fill_viridis_d(option = "viridis") +  # Automatically scales colors for discrete regions
+  theme_void()
+
+ggsave(paste0(filename, ".svg"), plot = bb, width = 10, height = 10)
+
+# Plot the brain with all regions filled in white
+bb <- ggplot() +
+  geom_brain(atlas = schaefer17_400, aes(fill = NA), show.legend = FALSE) +
+  scale_fill_manual(values = NA, na.value = "white") +  # Fill all regions with white
+  theme_void()
+
+filename = "schaef_plot_400_white"
+ggsave(paste0(filename, ".svg"), plot = bb, width = 10, height = 10)
+
+
+
+```
+
+## Plots for the MTD coupling in AAS results
+```{r}
+#load the data
+data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_lcavg.csv', header= FALSE)
+data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_lcavg_thresholded.csv', header= FALSE)
+
+# load in regions names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$V1[1:400])
+
+# Print the data frame to verify
+View(data_plot)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot, "mean_sig_permuted_thresholded_diff_mtd_lcavg_overtime.csv")
+
+data1 <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_ppnavg.csv', header= FALSE)
+data2 <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_ppnavg_thresholded.csv', header= FALSE)
+
+# load in regions names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot1 <- data.frame(label = label[1:400], SignificantCoefficient = data1$V1[1:400])
+data_plot2 <- data.frame(label = label[1:400], SignificantCoefficient = data2$V1[1:400])
+# Print the data frame to verify
+View(data_plot)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot1, "mean_sig_permuted_diff_mtd_ppnavg_overtime.csv")
+
+plot_brain_data_17nets(data_plot2, "mean_sig_permuted_thresholded_diff_mtd_ppnavg_overtime.csv")
+
+data1 <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_nbmavg.csv', header= FALSE)
+data2 <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/mean_sig_mtd_nbmavg_thresholded.csv', header= FALSE)
+
+# load in regions names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot1 <- data.frame(label = label[1:400], SignificantCoefficient = data1$V1[1:400])
+data_plot2 <- data.frame(label = label[1:400], SignificantCoefficient = data2$V1[1:400])
+# Print the data frame to verify
+View(data_plot)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets(data_plot1, "mean_sig_permuted_diff_mtd_nbmavg_overtime.csv")
+
+plot_brain_data_17nets(data_plot2, "mean_sig_permuted_thresholded_diff_mtd_nbmavg_overtime.csv")
+
+```
+## LDA Coupling Separation of Vary Time-points of AAS
+```{r}
+#load the data
+#Saved: grp_diff_timepoint_1.csv
+#Saved: grp_diff_timepoint_2.csv
+#Saved: grp_diff_timepoint_3.csv
+#Saved: grp_diff_timepoint_4.csv
+#Saved: grp_diff_timepoint_5.csv
+#Saved: grp_diff_timepoint_1_mtd_lc.csv
+# grp_diff_timepoint_1_mtd_ppn.csv
+# Load region names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions <- schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Set working directory for saving plots
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/PCA_LDA/Python/')
+
+# Loop through time points 1 to 5
+for (time_point_idx in 1:5) {
+  # Construct the filename for the current time point
+  data_file <- paste0('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/grp_diff_timepoint_', time_point_idx, '_mtd_ppn.csv')
+  
+  # Load the data for the current time point
+  data <- read.csv(data_file, header = TRUE)
+  
+  # Create the data frame for plotting
+  data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$X0[1:400])
+  
+  # Generate a unique name for the plot
+  plot_name <- paste0("mean_diff_selecttimepoint", time_point_idx, "_ppn_lda")
+  
+  # Plot onto the brain
+  plot_brain_data_17nets(data_plot, plot_name)
+  
+  # Print a message to confirm the plot was saved
+  print(paste("Plot saved for time point", time_point_idx, "as", plot_name))
+}
+
+```
+## LDA weighted coefficients plotted
+```{r}
+# Load the data for the LDA weighted coefficients
+data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lda_coefficient_weights_overtime_mtd_lc2.csv', header = TRUE)
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions <- schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+# Create the data frame for plotting
+  data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$X0[1:400])
+  
+  # Generate a unique name for the plot
+  # Set working directory for saving plots
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/PCA_LDA/Python/')
+plot_name <- paste0("lda_coefficient_weights_overtime_mtd_ppn")
+  
+  # Plot onto the brain
+plot_brain_17nets_blueorange(data_plot, plot_name)
+
+# Load the avg. dFC - group-specific pattern based on LDA separation
+#Saved: LDA_separated_delirium_like_avg_dFC_mtd_nbm.csv
+#Saved: LDA_separated_nondelirium_like_avg_dFC_mtd_nbm.csv
+#LDA_separated_diff_del_nondel_like_avg_dFC_mtd_ppn.csv
+#LDA_coeffs_weights_select_time_delirium_avg_dFC_mtd_nbm.csv
+data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/LDA_coeffs_weights_select_time_delta_avg_dFC_mtd_lc2.csv', header = TRUE)
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions <- schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+# Create the data frame for plotting
+  data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$X0[1:400])
+  
+  # Generate a unique name for the plot
+  # Set working directory for saving plots
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/PCA_LDA/Python/')
+plot_name <- paste0("LDA_coeffs_weights_select_time_delta_avg_dFC_mtd_ppn2")
+  
+  # Plot onto the brain
+plot_brain_data_17nets(data_plot, plot_name)
+```
+
+## Superior Temporal Gyrus Regions overlapping
+
+```{r}
+matrix_zeros <- matrix(0, nrow = 400, ncol = 1)
+# Create a data frame with labels and SignificantCoefficient
+data_plot <- data.frame(
+  label = label[1:400], 
+  SignificantCoefficient = matrix_zeros
+)
+# Make the "TempPar" regions equal to 1
+#data_plot$SignificantCoefficient[grepl("TempPar", data_plot$label)] <- 1
+# Assign sequential numbers (1, 2, 3, ...) to "TempPar" regions
+temp_par_indices <- which(grepl("TempPar", data_plot$label))
+data_plot$SignificantCoefficient[temp_par_indices] <- seq_along(temp_par_indices)
+
+
+# Plot the schaefer17_400 atlas with pastel colors
+data_plot <- data_plot %>% mutate(label = ifelse(str_detect(label, 
+        "_LH"), paste0("lh_", label), paste0("rh_", label)))
+    View(data_plot)
+
+# Generate unique colors for non-zero SignificantCoefficient values
+non_zero_values <- unique(data_plot$SignificantCoefficient[data_plot$SignificantCoefficient != 0])
+color_mapping <- c("0" = "white", setNames(rainbow(length(non_zero_values)), non_zero_values))
+
+# Plot with unique colors for each non-zero SignificantCoefficient
+# Plot with unique colors for each non-zero SignificantCoefficient
+p <- ggplot(data_plot, aes(fill = as.factor(SignificantCoefficient))) +
+  geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+  scale_fill_manual(values = color_mapping) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14),
+    legend.key.size = unit(1.5, "cm")
+  ) 
+
+
+# Print the plot
+print(p)
+
+
+
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/')
+
+
+filename = "schaef_plot_temppar_rois"
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+
+
+# Filter data to include only labels with non-zero SignificantCoefficient
+filtered_data <- data_plot %>% filter(SignificantCoefficient != 0)
+
+# Plot with legend corresponding to non-zero SignificantCoefficient labels
+p2 <- ggplot(filtered_data, aes(fill = as.factor(label))) +  # Map fill to label as a factor
+  geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+  scale_fill_manual(
+    values = setNames(rainbow(length(unique(filtered_data$label))), unique(filtered_data$label))  # Unique colors for each label
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.text = element_text(size = 12),
+    legend.title = element_text(size = 14),
+    legend.key.size = unit(1.5, "cm")
+  )
+
+# Print the plot
+print(p2)
+
+ilename = "schaef_plot_temppar_rois2"
+ggsave(paste0(filename, ".svg"), plot = p2, width = 10, height = 10)
+```
+
+# plot LC differences in Hyper vs Hypo
+```{r}
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei')
+# load in the data
+data <- read.csv('sig_diff_fc_lc_hypo_hyper_test.csv', header= FALSE)
+# load in the label
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot <- data.frame(label = label[1:400], SignificantCoefficient = data$V1[1:400])
+
+# Print the data frame to verify
+View(data_plot)
+
+#plot onto the brain - 
+plot_brain_data_17nets(data_plot, "sig_diff_fc_lc_hypo_hyper_ttest")
+
+
+```
+
+
+## Plotting the receptor maps onto the same plots
+```{r}
+# Load the receptor maps data
+# Define the path and scale
+path <- '/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/PhD/Code/neuromaps'
+scale <- 'scale400'
+
+# List of receptor CSV files
+receptors_csv <- c(
+  paste0(path, '/PET_parcellated/', scale, '/5HT1a_way_hc36_savli.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HT1b_p943_hc22_savli.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HT1b_p943_hc65_gallezot.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HT2a_cimbi_hc29_beliveau.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HT4_sb20_hc59_beliveau.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HT6_gsk_hc30_radhakrishnan.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/5HTT_dasb_hc100_beliveau.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/A4B2_flubatine_hc30_hillmer.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/CB1_omar_hc77_normandin.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/D1_SCH23390_hc13_kaller.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/D2_flb457_hc37_smith.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/D2_fallypride_hc49_jaworska.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/DAT_fpcit_hc174_dukart_spect.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/GABAa-bz_flumazenil_hc16_norgaard.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/H3_cban_hc8_gallezot.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/M1_lsn_hc24_naganawa.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/mGluR5_abp_hc22_rosaneto.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/mGluR5_abp_hc28_dubois.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/mGluR5_abp_hc73_smart.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/MU_carfentanil_hc204_kantonen.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/NAT_MRB_hc77_ding.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/NMDA_ge179_hc29_galovic.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc3_spreng.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc4_tuominen.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc5_bedard_sum.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc18_aghourian_sum.csv')
+)
+
+# Initialize an empty list to store receptor data
+receptor_data <- list()
+
+# Load each receptor CSV file into the list
+for (i in seq_along(receptors_csv)) {
+  receptor_data[[i]] <- read.csv(receptors_csv[i], header = FALSE)
+}
+
+# Combine all receptor data into a single data frame
+receptor_matrix <- do.call(cbind, receptor_data)
+
+# Define receptor names
+receptor_names <- c(
+  "5HT1a", "5HT1b", "5HT2a", "5HT4", "5HT6", "5HTT", "A4B2",
+  "CB1", "D1", "D2", "DAT", "GABAa", "H3", "M1", "mGluR5",
+  "MOR", "NET", "NMDA", "VAChT"
+)
+
+# Print the receptor matrix to verify
+print(head(receptor_matrix))
+
+
+# make final region x receptor matrix
+# Initialize an empty matrix for receptor data
+receptor_data <- matrix(0, nrow = nrow(receptor_matrix), ncol = length(receptor_names))
+
+# Assign receptor data to the matrix
+
+# make final region x receptor matrix
+#receptor_data[, 0] <- receptor_matrix[, 0]
+#receptor_data[, 2:9] <- receptor_matrix[, 3:10]
+#receptor_data[, 10:14] <- receptor_matrix[, 12:16]
+#receptor_data[, 15:18] <- receptor_matrix[, 19:22]
+
+# Weighted average of 5HT1B p943
+#receptor_data[, 2] <- (scale(receptor_matrix[, 2]) * 22 + scale(receptor_matrix[, 3]) * 65) / (22 + 65)
+
+# Weighted average of D2 flb457
+#receptor_data[, 10] <- (scale(receptor_matrix[, 11]) * 37 + scale(receptor_matrix[, 12]) * 55) / (37 + 55)
+
+# Weighted average of mGluR5 ABP688
+#receptor_data[, 15] <- (scale(receptor_matrix[, 17]) * 22 + scale(receptor_matrix[, 18]) * 28 + scale(receptor_matrix[, 19]) * 73) / (22 + 28 + 73)
+
+# Weighted average of VAChT FEOBV
+#receptor_data[, 19] <- (scale(receptor_matrix[, 23]) * 3 + scale(receptor_matrix[, 24]) * 4 + scale(receptor_matrix[, 25]) * 5 + scale(receptor_matrix[, 26]) * 18) / (3 + 4 + 5 + 18)
+```
+## Alternative plot colour
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data_17nets_alt <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+    #mutate(SignificantCoefficient = ifelse(SignificantCoefficient == 0, NA, SignificantCoefficient))
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    scale_fill_distiller(palette = "Spectral", direction = -1)
+    #scale_fill_viridis_c(option = "plasma", na.value = "white") +
+    #scale_fill_brewer(palette = "Set3")
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) +
+    #scale_fill_gradient2(low = "#C03B2B", mid = "white", high = "#0C7D79", midpoint = 0) +
+    theme_void() +
+    theme(
+        legend.position = "bottom",  # Position the legend at the bottom
+        legend.text = element_text(size = 12),  # Customize legend text size
+        legend.title = element_text(size = 14),  # Customize legend title size
+        legend.key = element_blank(),  # Remove the grey background in the legend
+       plot.background = element_rect(fill = "white", color = NA)) # Set the background to white
+  # Print the plot
+  print(p)
+# Save the plot as an SVG file
+ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+
+```{r}
+## modify the data you want to plot
+# Create a data frame for plotting
+
+
+#load in M1 receptor map
+path <- '/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/PhD/Code/neuromaps'
+scale <- 'scale400'
+
+# Specify the receptor map file you want to load
+receptor_file <- paste0(path, '/PET_parcellated/', scale, '/MU_carfentanil_hc204_kantonen.csv')
+
+# Load the receptor map
+receptor_map <- read.csv(receptor_file, header = FALSE)
+# Reshape receptor_map to 400 rows and 1 column
+receptor_map_reshaped <- matrix(as.numeric(unlist(receptor_map)), nrow = 400, ncol = 1)
+
+# Convert back to a data frame if needed
+receptor_map_reshaped <- as.data.frame(receptor_map_reshaped)
+
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot_M1receptor <- data.frame(label = label[1:400], SignificantCoefficient = receptor_map_reshaped$V1[1:400])
+#data_plot2 <- data.frame(label = label[1:400], SignificantCoefficient = data2$V1[1:400])
+# Print the data frame to verify
+View(data_plot_M1receptor)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets_alt(data_plot_M1receptor, "M1_receptor_map_carfentanil_hc204_kantonen2")
+
+
+
+```
+
+## Plot the significant only ROIs receptor
+```{r}
+
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+plot_brain_data(data2, "PC_ROI_peaktime_mmnamplitude_sigcoeffs")
+# create a 502 x 1 with 1 where there is no zero in data2
+data_binary <- data2 %>%
+  mutate(SignificantCoefficient = ifelse(SignificantCoefficient != 0, 1, 0))
+
+#based of where there is 1
+receptor_sig_plot <- receptor_map_reshaped
+receptor_sig_plot[which(data_binary$SignificantCoefficient == 0), ] <- 0> receptor_sig_plot[which(data_binary$SignificantCoefficient == 0), ] <- 0
+
+#NA for 0 instead
+receptor_sig_plot[which(data_binary$SignificantCoefficient == 0), ] <- NA
+
+data_plot_sig_M1receptor <- data.frame(label = label[1:400], SignificantCoefficient = receptor_sig_plot$V1[1:400])
+#create plot
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/')
+plot_brain_data_17nets_alt(data_plot_sig_M1receptor, "M1_receptor_map_carfentanil_hc204_kantonen2_sigonly")
+```
+
+
+## Plot receptor for ACh
+```{r}
+  #paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc3_spreng.csv'),
+  #paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc4_tuominen.csv'),
+  #paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc5_bedard_sum.csv'),
+  #paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc18_aghourian_sum.csv')
+
+
+# Define the path and scale
+path <- '/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/PhD/Code/neuromaps'
+scale <- 'scale400'
+
+# List the receptor files you want to load
+receptor_files <- c(
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc3_spreng.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc4_tuominen.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc5_bedard_sum.csv'),
+  paste0(path, '/PET_parcellated/', scale, '/VAChT_feobv_hc18_aghourian_sum.csv')
+)
+
+# Load all files into a list
+receptor_maps <- lapply(receptor_files, function(f) {
+  as.numeric(unlist(read.csv(f, header = FALSE)))
+})
+
+# Optionally, combine into a data frame (columns = files, rows = regions)
+receptor_maps_df <- as.data.frame(do.call(cbind, receptor_maps))
+colnames(receptor_maps_df) <- c("hc3_spreng", "hc4_tuominen", "hc5_bedard_sum", "hc18_aghourian_sum")
+
+# Now receptor_maps_df has each map as a column
+head(receptor_maps_df)
+
+# Weighted average of VAChT FEOBV
+#receptor_data[, 19] <- (scale(receptor_matrix[, 23]) * 3 + scale(receptor_matrix[, 24]) * 4 + scale(receptor_matrix[, 25]) * 5 + scale(receptor_matrix[, 26]) * 18) / (3 + 4 + 5 + 18)
+
+weights <-(c(3,4,5,18))
+# Scale each column
+scaled_maps <- scale(receptor_maps_df)
+
+# Weighted sum
+weighted_sum <- scaled_maps %*% weights
+
+# Weighted average
+weighted_avg <- as.numeric(weighted_sum) / sum(weights)
+
+# Add to your data frame if you want
+receptor_maps_df$weighted_avg <- weighted_avg
+
+# Now receptor_maps_df$weighted_avg contains the scaled weighted average for each region
+head(receptor_maps_df)
+
+
+
+# Reshape receptor_map to 400 rows and 1 column
+receptor_map_reshaped <- matrix(as.numeric(unlist(receptor_maps_df$weighted_avg)), nrow = 400, ncol = 1)
+
+# Convert back to a data frame if needed
+receptor_map_reshaped <- as.data.frame(receptor_map_reshaped)
+
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+# Create a data frame for plotting
+data_plot_M1receptor <- data.frame(label = label[1:400], SignificantCoefficient = receptor_map_reshaped$V1[1:400])
+#data_plot2 <- data.frame(label = label[1:400], SignificantCoefficient = data2$V1[1:400])
+# Print the data frame to verify
+View(data_plot_M1receptor)
+
+#plot onto the brain
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+plot_brain_data_17nets_alt(data_plot_M1receptor, "VAChT_weighted_avg")
+```
+
+## Plotting the gene expressions onto the map
+```{r}
+# Load the gene expression data
+gene_expression_data <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/code/Gene_related_expression/AHBA_GeneExpression_Schaefer400_2mm_centroid_interpolation.csv', header = TRUE)
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+
+#select for the genes of interest
+ach_genes = c(
+    # Nicotinic receptor subunits
+    'CHRNA1', 'CHRNA2', 'CHRNA3', 'CHRNA4', 'CHRNA5', 'CHRNA6', 'CHRNA7',
+    'CHRNB1', 'CHRNB2', 'CHRNB3', 'CHRNB4',
+    # Muscarinic receptor subtypes
+    'CHRM1', 'CHRM2', 'CHRM3', 'CHRM4', 'CHRM5',
+    # Synthesis
+    'CHAT',
+    # Vesicular transporter
+    'SLC18A3','SLC44A2', 'SLC44A5','SLC5A7','SLC44A1',
+    # Degradation
+    'ACHE', 'BCHE')
+# Filter the gene expression data for the genes of interest
+gene_expression_filtered <- gene_expression_data[, colnames(gene_expression_data) %in% ach_genes, drop=FALSE]
+# zscore across each column and preserve column names
+gene_expression_filtered <- as.data.frame(scale(gene_expression_filtered))
+# Ensure column names are preserved after scaling
+colnames(gene_expression_filtered) <- intersect(colnames(gene_expression_data), ach_genes)
+gene_select <- gene_expression_filtered[,"BCHE"] # Assuming you want the first 400 rows
+
+data_plot <- data.frame(label = label[1:400], SignificantCoefficient = gene_select)
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Gene_Expression_Neuromaps/')
+plot_brain_data_17nets_alt(data_plot, "BCHE_gene_expression_schaefer_400_altcolour")
+plot_brain_data_17nets(data_plot, "BCHE_gene_expression_schaefer_400")
+
+# loop through each gene in ach_genes and plot
+for (gene in ach_genes) {
+  if (gene %in% colnames(gene_expression_filtered)) {
+    gene_select <- gene_expression_filtered[[gene]]  # Select the gene column by name
+    data_plot <- data.frame(label = label[1:400], SignificantCoefficient = gene_select)
+    
+    # Set the working directory for saving plots
+    setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Gene_Expression_Neuromaps/')
+    
+    # Plot onto the brain
+    plot_brain_data_17nets_alt2(data_plot, paste0(gene, "_gene_expression_schaefer_400_altcolour2"))
+    #plot_brain_data_17nets(data_plot, paste0(gene, "_gene_expression_schaefer_400"))
+  }
+}
+
+#load in the pca coeffs for the genes altogether
+pca_gene_ach <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Gene_Expression_Neuromaps/ach_pca_selected.csv', header = TRUE)
+pc_select <- pca_gene_ach$PC2# Assuming you want the first 400 rows
+
+for (pc_name in colnames(pca_gene_ach)) {
+  pc_select <- pca_gene_ach[[pc_name]][1:400]
+  data_plot <- data.frame(label = label[1:400], SignificantCoefficient = pc_select)
+  setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Gene_Expression_Neuromaps/')
+  plot_brain_data_17nets_alt2(data_plot, paste0(pc_name, "_pca_ach_gene_schaefer_400_altcolour2"))
+  #plot_brain_data_17nets(data_plot, paste0(pc_name, "_pca_ach_gene_schaefer_400"))
+}
+
+
+```
+
+## Plotting the EEG Alpha Power differences
+```{r}
+# Load p-values and FDR corrected p-values
+pvals_alphapower <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/alphapower_fdr_pvals.csv', header = FALSE)
+# row 1 = p_Pre_Post; row 2=p_Post_Res; row 3 = p_Pre_Res
+# load in the mean alpha powers
+mean_alphapower_all <- read.csv('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/pre_post_mean_alphapower.csv', header = FALSE)
+#load in relevant ROIs names
+schaef_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/schaef_names.csv", header = TRUE, stringsAsFactors = FALSE)
+regions = schaef_names$ROI.Name
+label <- schaef_names$ROI.Name
+# Create binary significance indicator (1 if p < 0.05, 0 if not)
+sig_indicator <- ifelse(pvals_alphapower[2,] < 0.05, 1, 0)
+
+# Calculate difference between rows 3 and 2 (columns 2:401)
+diff_meanres_meanpost <- mean_alphapower_all[3,2:401] - mean_alphapower_all[2,2:401]
+
+# Keep values only where p-values < 0.05, set others to 0
+diff_meanres_meanpost[pvals_alphapower[2,] >= 0.05] <- 0
+# Create a data frame for plotting
+data_plot_alphapower <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = as.numeric(diff_meanres_meanpost[1:400])
+)
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+plot_brain_data_17nets(data_plot_alphapower, "Sig_FDR_alphapower_meanres_meanpostdiff")
+
+data_plot_alphapower <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = as.numeric(diff_meanres_meanpost[1:400])
+)
+
+plot_brain_data_17nets(data_plot_alphapower, "Nonsig_alphapower_meanres_meanpostdiff")
+
+diff_meanres_meanpre <- mean_alphapower_all[3,2:401] - mean_alphapower_all[1,2:401]
+diff_meanres_meanpre[pvals_alphapower[3,] >= 0.05] <- 0
+slacdata_plot_alphapower <- data.frame(
+  label = label[1:400],
+  SignificantCoefficient = as.numeric(diff_meanres_meanpre[1:400])
+)
+plot_brain_data_17nets(data_plot_alphapower, "Sig_FDR_alphapower_meanres_meanprediff")
+```
