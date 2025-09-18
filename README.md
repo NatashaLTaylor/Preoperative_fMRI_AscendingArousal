@@ -3,7 +3,7 @@ The following repository includes all relevant code for the analysis correspondi
 
 ### fMRI Analysis
 
-All relevant for fMRI Analysis - note some of this code is overlaping with the following [repository](https://github.com/NatashaLTaylor/Preoperative_fMRI_FunctionalNetworks/tree/main/FC_Analysis) <br>
+All relevant for [fMRI](/fMRI/) Analysis - note some of this code is overlaping with the following [repository](https://github.com/NatashaLTaylor/Preoperative_fMRI_FunctionalNetworks/tree/main/FC_Analysis) <br>
 
 
 ### Graph Theory Analysis
