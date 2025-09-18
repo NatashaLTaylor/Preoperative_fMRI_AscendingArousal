@@ -1,0 +1,40 @@
+#!/bin/bash 
+#PBS -P IPOD_B3
+#PBS -l select=1:ncpus=6:mem=12GB
+#PBS -q=main
+#PBS -l walltime=20:00:00
+
+#load modules required
+module load freesurfer/7.1.1
+module load fsl
+module load ants
+module load afni
+module load c3d
+#load python
+module load python/3.7.7
+
+######
+#Set up directories
+root_path=/scratch/IPOD_B3/V3
+cd $root_path
+data_path=${root_path}/bids/derivatives/
+output_path=${root_path}/fmriprep_output
+ref_path=${root_path}/fmriprep/
+task_name=rest
+#if freesurfer is 
+freesurfer_file=${ref_path}freesurfer.txt
+#freesurfer_output=${output_path}/freesurfer
+#if using aroma include lines --use-aroma --aroma-melodic-dimensionality -200
+#if ignoring fieldmaps because there are not epi files - include (--ignore fieldmaps) or ignore slice-timing (--ignore slicetimimg)
+#if include specific ouput spaces (--output-spaces ...)
+
+echo "Data input ${data_path}"
+echo "Data output ${output_path}"
+
+echo "singularity run --cleanenv $fmriprep_img ${data_path} ${output_path} participant --participant_label $PBS_JOBNAME --task-id ${task_name} --ignore fieldmaps --fs-license-file ${freesurfer_file} \
+ --bold2t1w-dof 6 --return-all-components --skull-strip-t1w auto --use-syn-sdc --fs-no-reconall -w ${output_path}"
+
+
+fmriprep ${data_path} ${output_path} --skip_bids_validation participant --participant_label $PBS_JOBNAME -t ${task_name} --ignore 'fieldmaps' --fs-license-file ${freesurfer_file} \
+--output-spaces MNI152NLin6Asym:res-2 MNI152NLin2009cAsym --bold2t1w-dof 6 --return-all-components --skull-strip-t1w auto --fs-no-reconall -w ${output_path}  
+ # --fs-subjects-dir ${freesurfer_output}
