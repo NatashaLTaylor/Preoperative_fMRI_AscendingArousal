@@ -20,8 +20,18 @@ Related code for calculating the Linear Discriminant Analysis to differentiate s
 ### Logistic regression
 All relevant code for logistic regression was done in R - see relevant packages required in [logistic regression code](/LogisticRegressions/).
 
+### Gene Expression
+All gene expression analysis relies upon data from the Human Allen Brain Atlas, https://human.brain-map.org/ <br>
+In addition, this analysis is reliant upon the installation of the [neuromaps toolbox](https://github.com/netneurolab/neuromaps) <br>
+All code relevant for this analysisis [here](/GeneExpression/)
+
+
 ### Figures
-All generated figures can be foud in [Figures](/Figures/).
+All generated brain figures can be foud in [Figures](/Figures/) <br>
+
+Any questions relating to this repository, please contact on 
+
+
 
 
 
