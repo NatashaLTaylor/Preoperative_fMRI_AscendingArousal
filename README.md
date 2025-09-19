@@ -21,7 +21,7 @@ All relevant code for logistic regression was done in R - see relevant packages 
 ### Gene Expression
 All gene expression analysis relies upon data from the Human Allen Brain Atlas, https://human.brain-map.org/ <br>
 In addition, this analysis is reliant upon the installation of the [neuromaps toolbox](https://github.com/netneurolab/neuromaps) <br>
-All code relevant for this analysisis [here](/GeneExpression/)
+All code relevant for this analysis is [here](/GeneExpression/)
 
 ### Figures
 All generated brain figures can be foud in [Figures](/Figures/) <br>
