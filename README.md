@@ -1,5 +1,6 @@
 # Preoperative fMRI AscendingArousal
-The following repository includes all relevant code for the analysis corresponding to the following paper "Preoperative Cholinergic Signatures Drive Segregated Brain Architecture in Postoperative Delirium" written by Dr. Natasha L Taylor et al.
+The following repository includes all relevant code for the analysis corresponding to the following paper "Preoperative Cholinergic Signatures Drive Segregated Brain Architecture in Postoperative Delirium" written by Dr. Natasha L Taylor et al. 2026
+Bioarvix paper - https://pmc.ncbi.nlm.nih.gov/articles/PMC12668175/ 
 
 ### fMRI Analysis
 
@@ -22,6 +23,9 @@ All relevant code for logistic regression was done in R - see relevant packages 
 All gene expression analysis relies upon data from the Human Allen Brain Atlas, https://human.brain-map.org/ <br>
 In addition, this analysis is reliant upon the installation of the [neuromaps toolbox](https://github.com/netneurolab/neuromaps) <br>
 All code relevant for this analysis is [here](/GeneExpression/)
+
+### fMRI Related Analysis
+All relevant code for fMRI analysis & additional regression of CSF fourth-ventricle mask from ascending arousal nuclei are in [fMRI_denoiseing](/fMRI/) .
 
 ### Figures
 All generated brain figures can be foud in [Figures](/Figures/) <br>
