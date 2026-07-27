@@ -1,4 +1,4 @@
-# Preoperative fMRI AscendingArousal
+# Preoperative Cholinergic fMRI Signatures Ascending Arousal changes in Postoperative Delirium
 The following repository includes all relevant code for the analysis corresponding to the following paper "Preoperative Cholinergic Signatures Drive Segregated Brain Architecture in Postoperative Delirium" written by Dr. Natasha L Taylor et al. 2026
 Bioarvix paper - https://pmc.ncbi.nlm.nih.gov/articles/PMC12668175/ 
 
