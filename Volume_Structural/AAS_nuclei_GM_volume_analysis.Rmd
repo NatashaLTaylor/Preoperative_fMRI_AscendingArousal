@@ -1,0 +1,512 @@
+---
+title: "AAS Nuclei GM Volume Analysis - LC & nbM"
+output: html_document
+---
+
+```{r setup}
+library(lmPerm)
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(purrr)
+library(broom)
+
+setwd('~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native')
+
+# Define ROIs of interest
+roi_labels <- c(485, 486, 491, 492)
+roi_names <- c("485" = "L_LC", "486" = "R_LC", "491" = "R_nbM", "492" = "L_nbM")
+```
+
+## Load in AAS nuclei volume data (native space, 1mm)
+
+```{r load_aas_volumes}
+subject_ids_file <- '~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/subject_ids.txt'
+subject_ids <- readLines(subject_ids_file)
+data_list <- list()
+
+# Loop through each subject ID and load the corresponding .csv file
+for (sub_id in subject_ids) {
+  csv_file <- paste0(
+    "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/",
+    sub_id, "_GM_aas_nuclei_volumes.csv"
+  )
+  
+  if (file.exists(csv_file)) {
+    data <- read.csv(csv_file,header=TRUE)
+    data$SubjectID <- sub_id
+    data_list[[sub_id]] <- data
+  } else {
+    message(paste("File not found for subject:", sub_id))
+  }
+}
+
+# Combine all dataframes into a single dataframe
+combined_data <- bind_rows(data_list)
+head(combined_data)
+
+# Filter to only the 4 ROIs of interest
+combined_data <- combined_data %>%
+  filter(Label %in% roi_labels) %>%
+  mutate(ROI_Name = roi_names[as.character(Label)])
+```
+
+```{r pivot_volumes}
+# Probabilistic GM Volume (wide format)
+ProbGM_Volume <- combined_data %>%
+  select(SubjectID, ROI_Name, ProbGM_Volume_mm3) %>%
+  pivot_wider(names_from = ROI_Name, values_from = ProbGM_Volume_mm3)
+
+# Binary Mask Volume (wide format)
+Binary_Volume <- combined_data %>%
+  select(SubjectID, ROI_Name, BinaryMask_Volume_mm3) %>%
+  pivot_wider(names_from = ROI_Name, values_from = BinaryMask_Volume_mm3)
+
+# Mean GM Probability - all voxels (wide format)
+MeanGM_All <- combined_data %>%
+  select(SubjectID, ROI_Name, MeanGM_AllVoxels) %>%
+  pivot_wider(names_from = ROI_Name, values_from = MeanGM_AllVoxels)
+
+# Mean GM Probability - non-zero voxels (wide format)
+MeanGM_NonZero <- combined_data %>%
+  select(SubjectID, ROI_Name, MeanGM_NonZero) %>%
+  pivot_wider(names_from = ROI_Name, values_from = MeanGM_NonZero)
+```
+
+## Load demographic and clinical data
+
+```{r load_demographics}
+cog_data <- read.csv("~/onedrive_usyd/Postdoc_Rob/Analysis/Demographic_Data/mri_scanner_cog.csv")
+subject_data <- read.csv("~/onedrive_usyd/Postdoc_Rob/Analysis/Demographic_Data/subject_data_IL810_mri.csv")
+
+# Standardize subject_data$sub_id to match "sub-00X" format
+subject_data$sub_id <- sprintf("sub-%03d", subject_data$sub_id)
+subject_data <- subject_data[-88, ] #need to remove sub-164 as it is not in the pc data
+subject_data <- subject_data[-c(30,31), ] #remove sub-049 and sub-050 as they are not in the pc data
+# Find unmatched subjects
+unmatched_subjects <- setdiff(subject_ids, subject_data$sub_id)
+print(paste("Unmatched subjects:", paste(unmatched_subjects, collapse = ", ")))
+
+# Filter volume data to remove unmatched subjects
+ProbGM_Volume <- ProbGM_Volume %>% filter(!(SubjectID %in% unmatched_subjects))
+Binary_Volume <- Binary_Volume %>% filter(!(SubjectID %in% unmatched_subjects))
+MeanGM_All <- MeanGM_All %>% filter(!(SubjectID %in% unmatched_subjects))
+MeanGM_NonZero <- MeanGM_NonZero %>% filter(!(SubjectID %in% unmatched_subjects))
+```
+
+## Load TIV data
+
+```{r load_tiv}
+data_list_tiv <- list()
+
+for (sub_id in subject_ids) {
+  csv_file <- paste0(
+    "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/Volume_TIV/",
+    sub_id, "_tiv_volumes_brainmsk.csv"
+  )
+  
+  if (file.exists(csv_file)) {
+    data2 <- read.csv(csv_file)
+    data2$SubjectID <- sub_id
+    data_list_tiv[[sub_id]] <- data2
+  } else {
+    message(paste("TIV file not found for subject:", sub_id))
+  }
+}
+
+Volume_TIV <- bind_rows(data_list_tiv) %>%
+  select(SubjectID, Volume_mm3) %>%
+  filter(!(SubjectID %in% unmatched_subjects))
+```
+
+## Descriptive Statistics - Check GM probability values in brainstem
+
+```{r descriptive_check}
+# This is critical: check whether GM segmentation is reliable in these nuclei
+cat("=== Mean GM Probability (All Voxels) - Summary per ROI ===\n")
+combined_data %>%
+  filter(!(SubjectID %in% unmatched_subjects)) %>%
+  group_by(ROI_Name) %>%
+  summarise(
+    mean_prob = mean(MeanGM_AllVoxels, na.rm = TRUE),
+    sd_prob = sd(MeanGM_AllVoxels, na.rm = TRUE),
+    min_prob = min(MeanGM_AllVoxels, na.rm = TRUE),
+    max_prob = max(MeanGM_AllVoxels, na.rm = TRUE),
+    n = n()
+  ) %>%
+  print()
+
+cat("\n=== Probabilistic GM Volume (mm3) - Summary per ROI ===\n")
+combined_data %>%
+  filter(!(SubjectID %in% unmatched_subjects)) %>%
+  group_by(ROI_Name) %>%
+  summarise(
+    mean_vol = mean(ProbGM_Volume_mm3, na.rm = TRUE),
+    sd_vol = sd(ProbGM_Volume_mm3, na.rm = TRUE),
+    min_vol = min(ProbGM_Volume_mm3, na.rm = TRUE),
+    max_vol = max(ProbGM_Volume_mm3, na.rm = TRUE),
+    n = n()
+  ) %>%
+  print()
+```
+
+## Statistical Analysis - Probabilistic GM Volume by Delirium Group
+
+```{r ttest_probGM}
+# Merge with group information
+ProbGM_with_groups <- ProbGM_Volume %>%
+  left_join(subject_data %>% select(sub_id, bin_delirium), by = c("SubjectID" = "sub_id"))
+
+# T-tests for each ROI
+results_probGM <- ProbGM_with_groups %>%
+  pivot_longer(cols = -c(SubjectID, bin_delirium), names_to = "ROI", values_to = "Volume") %>%
+  group_by(ROI) %>%
+  summarise(
+    mean_group0 = mean(Volume[bin_delirium == 0], na.rm = TRUE),
+    mean_group1 = mean(Volume[bin_delirium == 1], na.rm = TRUE),
+    t_statistic = t.test(Volume ~ bin_delirium)$statistic,
+    p_value = t.test(Volume ~ bin_delirium)$p.value
+  ) %>%
+  mutate(significance = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ "ns"
+  ))
+
+cat("=== T-test Results: Probabilistic GM Volume ===\n")
+print(results_probGM)
+
+library(kableExtra)
+
+results_probGM %>%
+  mutate(
+    mean_group0 = round(mean_group0, 2),
+    mean_group1 = round(mean_group1, 2),
+    t_statistic = round(t_statistic, 3),
+    p_value = formatC(p_value, format = "e", digits = 3)
+  ) %>%
+  kable(
+    col.names = c("ROI", "Mean (No Delirium)", "Mean (Delirium)", 
+                   "t-statistic", "p-value", "Sig."),
+    caption = "T-test Results: Probabilistic GM Volume",
+    align = "lccccc"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = FALSE) %>%
+  row_spec(which(results_probGM$p_value < 0.05), bold = TRUE, color = "red")
+
+```
+
+```{r ttest_binary}
+# Also test binary mask volume (atlas region volume)
+Binary_with_groups <- Binary_Volume %>%
+  left_join(subject_data %>% select(sub_id, bin_delirium), by = c("SubjectID" = "sub_id"))
+
+results_binary <- Binary_with_groups %>%
+  pivot_longer(cols = -c(SubjectID, bin_delirium), names_to = "ROI", values_to = "Volume") %>%
+  group_by(ROI) %>%
+  summarise(
+    mean_group0 = mean(Volume[bin_delirium == 0], na.rm = TRUE),
+    mean_group1 = mean(Volume[bin_delirium == 1], na.rm = TRUE),
+    t_statistic = t.test(Volume ~ bin_delirium)$statistic,
+    p_value = t.test(Volume ~ bin_delirium)$p.value
+  ) %>%
+  mutate(significance = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ "ns"
+  ))
+
+cat("=== T-test Results: Binary Mask Volume ===\n")
+print(results_binary)
+results_binary %>%
+  mutate(
+    mean_group0 = round(mean_group0, 2),
+    mean_group1 = round(mean_group1, 2),
+    t_statistic = round(t_statistic, 3),
+    p_value = formatC(p_value, format = "e", digits = 3)
+  ) %>%
+  kable(
+    col.names = c("ROI", "Mean (No Delirium)", "Mean (Delirium)", 
+                   "t-statistic", "p-value", "Sig."),
+    caption = " T-test Results: Binary Mask Volume",
+    align = "lccccc"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"), 
+                full_width = FALSE) %>%
+  row_spec(which(results_probGM$p_value < 0.05), bold = TRUE, color = "red")
+
+```
+
+## Statistical Analysis - Ratio of Probabilistic GM Volume / TIV
+
+```{r ratio_analysis}
+# Calculate ratio of ProbGM Volume / TIV
+ProbGM_with_TIV <- ProbGM_Volume %>%
+  left_join(Volume_TIV, by = "SubjectID")
+
+Ratio_output <- ProbGM_with_TIV %>%
+  mutate(across(
+    c(L_LC, R_LC, R_nbM, L_nbM),
+    ~ . / Volume_mm3,
+    .names = "Ratio_{.col}"
+  )) %>%
+  select(SubjectID, starts_with("Ratio_"))
+
+# Merge with group information
+Ratio_with_groups <- Ratio_output %>%
+  left_join(subject_data %>% select(sub_id, bin_delirium), by = c("SubjectID" = "sub_id"))
+
+# T-tests on ratios
+results_ratio <- Ratio_with_groups %>%
+  pivot_longer(cols = -c(SubjectID, bin_delirium), names_to = "ROI", values_to = "Ratio") %>%
+  group_by(ROI) %>%
+  summarise(
+    mean_group0 = mean(Ratio[bin_delirium == 0], na.rm = TRUE),
+    mean_group1 = mean(Ratio[bin_delirium == 1], na.rm = TRUE),
+    t_statistic = t.test(Ratio ~ bin_delirium)$statistic,
+    p_value = t.test(Ratio ~ bin_delirium)$p.value
+  ) %>%
+  mutate(significance = case_when(
+    p_value < 0.001 ~ "***",
+    p_value < 0.01 ~ "**",
+    p_value < 0.05 ~ "*",
+    TRUE ~ "ns"
+  ))
+
+cat("=== T-test Results: ProbGM Volume / TIV Ratio ===\n")
+print(results_ratio)
+
+results_ratio %>%
+  mutate(
+    mean_group0 = formatC(mean_group0, format = "e", digits = 3),
+    mean_group1 = formatC(mean_group1, format = "e", digits = 3),
+    t_statistic = round(t_statistic, 3),
+    p_value = formatC(p_value, format = "e", digits = 3),
+    ROI = gsub("Ratio_", "", ROI)
+  ) %>%
+  kable(
+    col.names = c("ROI", "Mean (No Delirium)", "Mean (Delirium)",
+                   "t-statistic", "p-value", "Sig."),
+    caption = "T-test Results: Probabilistic GM Volume / TIV Ratio",
+    align = "lccccc"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE) %>%
+  row_spec(which(results_ratio$p_value < 0.05), bold = TRUE, color = "red")
+
+```
+
+## Logistic Regression - AAS nuclei volumes and TIV predicting delirium
+
+```{r logistic_regression}
+# Calculate bilateral averages
+# Calculate bilateral averages
+logistic_data <- ProbGM_Volume %>%
+  mutate(
+    LC_avg = (L_LC + R_LC) / 2,
+    nbM_avg = (L_nbM + R_nbM) / 2
+  ) %>%
+  left_join(Volume_TIV, by = "SubjectID") %>%
+  left_join(subject_data %>% select(sub_id, bin_delirium), by = c("SubjectID" = "sub_id"))
+
+# Loop through each region
+regions <- c("L_LC", "R_LC", "L_nbM", "R_nbM", "LC_avg", "nbM_avg")
+logistic_models <- list()
+logistic_summaries <- list()
+
+for (region in regions) {
+  formula <- as.formula(paste("bin_delirium ~", region, "+ Volume_mm3"))
+  model <- glm(formula, data = logistic_data, family = binomial)
+  logistic_models[[region]] <- model
+  logistic_summaries[[region]] <- summary(model)
+}
+
+# Tidy results
+results_logres <- map_dfr(logistic_models, ~ broom::tidy(.), .id = "Region")
+
+results_logres %>%
+  mutate(
+    estimate = round(estimate, 4),
+    std.error = round(std.error, 4),
+    statistic = round(statistic, 3),
+    p.value = formatC(p.value, format = "e", digits = 3)
+  ) %>%
+  kable(
+    col.names = c("Region", "Term", "Estimate", "Std. Error",
+                   "z-statistic", "p-value"),
+    caption = "Logistic Regression Results: ROI Volume + TIV ~ Delirium",
+    align = "llcccc"
+  ) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"),
+                full_width = FALSE)
+
+capture.output(logistic_summaries, 
+               file = "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/logistic_GM_volume_native_aas_nuclei_TIV_bin_del.txt")
+```
+
+## Plotting - Box plots by delirium group
+
+```{r boxplot_probGM, fig.width=10, fig.height=6}
+roi_order <- c("L_LC", "R_LC", "L_nbM", "R_nbM")
+
+ProbGM_long <- ProbGM_with_groups %>%
+  pivot_longer(cols = -c(SubjectID, bin_delirium), names_to = "ROI", values_to = "Volume") %>%
+  left_join(results_probGM %>% select(ROI, significance), by = "ROI") %>%
+  mutate(ROI = factor(ROI, levels = roi_order))
+
+p_box <- ggplot(ProbGM_long, aes(x = as.factor(bin_delirium), y = Volume, fill = as.factor(bin_delirium))) +
+  geom_boxplot(outlier.shape = 21, outlier.size = 2) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
+  facet_wrap(~ ROI, scales = "free_y", nrow = 1) +
+  geom_text(
+    data = ProbGM_long %>%
+      group_by(ROI, significance) %>%
+      summarise(y_pos = max(Volume, na.rm = TRUE) * 1.05, .groups = "drop") %>%
+      distinct(),
+    aes(x = 1.5, y = y_pos, label = significance),
+    inherit.aes = FALSE, size = 5, hjust = 0.5
+  ) +
+  scale_fill_manual(values = c("0" = "#f9a340", "1" = "#7fb6cc"),
+                    labels = c("0" = "No Delirium", "1" = "Delirium")) +
+  labs(
+    title = "Probabilistic GM Volume by Delirium Group - AAS Nuclei",
+    x = "Delirium Group",
+    y = expression("Probabilistic GM Volume (mm"^3*")"),
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+print(p_box)
+ggsave(
+  filename = "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/ProbGM_Volume_AAS_Nuclei_Delirium_Group.svg",
+  plot = p_box, width = 10, height = 6, dpi = 300
+)
+```
+
+```{r boxplot_ratio, fig.width=10, fig.height=6}
+ratio_order <- c("Ratio_L_LC", "Ratio_R_LC", "Ratio_L_nbM", "Ratio_R_nbM")
+
+Ratio_long <- Ratio_with_groups %>%
+  pivot_longer(cols = -c(SubjectID, bin_delirium), names_to = "ROI", values_to = "Ratio") %>%
+  left_join(results_ratio %>% select(ROI, significance), by = "ROI") %>%
+  mutate(ROI = factor(ROI, levels = ratio_order))
+
+p_ratio <- ggplot(Ratio_long, aes(x = as.factor(bin_delirium), y = Ratio, fill = as.factor(bin_delirium))) +
+  geom_boxplot(outlier.shape = 21, outlier.size = 2) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1.5) +
+  facet_wrap(~ ROI, scales = "free_y", nrow = 1) +
+  geom_text(
+    data = Ratio_long %>%
+      group_by(ROI, significance) %>%
+      summarise(y_pos = max(Ratio, na.rm = TRUE) * 1.05, .groups = "drop") %>%
+      distinct(),
+    aes(x = 1.5, y = y_pos, label = significance),
+    inherit.aes = FALSE, size = 5, hjust = 0.5
+  ) +
+  scale_fill_manual(values = c("0" = "#f9a340", "1" = "#7fb6cc"),
+                    labels = c("0" = "No Delirium", "1" = "Delirium")) +
+  labs(
+    title = "GM Volume / TIV Ratio by Delirium Group - AAS Nuclei",
+    x = "Delirium Group",
+    y = "ProbGM Volume / TIV Ratio",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+print(p_ratio)
+
+ggsave(
+  filename = "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/ProbGM_Volume_TIV_Ratio_AAS_Nuclei_Delirium_Group.svg",
+  plot = p_ratio, width = 10, height = 6, dpi = 300
+)
+```
+
+## Scatter plots - Volume vs TIV by group
+
+```{r scatter_tiv, fig.width=10, fig.height=6}
+scatter_order <- c("L_LC", "R_LC", "L_nbM", "R_nbM", "LC_avg", "nbM_avg")
+
+scatter_data <- logistic_data %>%
+  pivot_longer(cols = c(L_LC, R_LC, L_nbM, R_nbM, LC_avg, nbM_avg),
+               names_to = "ROI", values_to = "AvgVolume") %>%
+  mutate(ROI = factor(ROI, levels = scatter_order))
+
+p_scatter <- ggplot(scatter_data, aes(x = Volume_mm3, y = AvgVolume, color = as.factor(bin_delirium))) +
+  geom_point(alpha = 0.7) +
+  geom_smooth(method = "lm", se = TRUE, linetype = "dashed") +
+  facet_wrap(~ ROI, scales = "free_y") +
+  scale_color_manual(values = c("0" = "#f9a340", "1" = "#7fb6cc"),
+                     labels = c("0" = "No Delirium", "1" = "Delirium")) +
+  labs(
+    title = "AAS Nuclei GM Volume vs TIV by Delirium Group",
+    x = "Total Intracranial Volume (TIV, mm³)",
+    y = expression("Probabilistic GM Volume (mm"^3*")"),
+    color = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    strip.text = element_text(size = 12, face = "bold"),
+    axis.text = element_text(size = 10),
+    axis.title = element_text(size = 12),
+    legend.position = "bottom"
+  )
+
+print(p_scatter)
+ggsave(filename = "~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/ProbGM_Volume_AAS_vs_TIV_Scatter.svg", plot = p_scatter, width = 10, height = 6, dpi = 300)
+```
+
+## Mean GM Probability check - are brainstem segmentations reliable?
+
+```{r gm_prob_check, fig.width=10, fig.height=5}
+roi_labels <- c(485, 486, 491, 492)
+roi_names <- c("L_LC", "R_LC", "R_nbM", "L_nbM")
+roi_order <- c("L_LC", "R_LC", "L_nbM", "R_nbM")
+
+MeanGM_long <- combined_data %>%
+  filter(Label %in% roi_labels) %>%
+  filter(!(SubjectID %in% unmatched_subjects)) %>%
+  mutate(ROI_Name = factor(
+    roi_names[match(Label, roi_labels)],
+    levels = roi_order
+  )) %>%
+  left_join(subject_data %>% select(sub_id, bin_delirium), by = c("SubjectID" = "sub_id"))
+
+p_prob <- ggplot(MeanGM_long, aes(x = ROI_Name, y = MeanGM_AllVoxels, fill = as.factor(bin_delirium))) +
+  geom_boxplot(outlier.shape = 21, outlier.size = 2) +
+  geom_jitter(width = 0.15, alpha = 0.4, size = 1.5, position = position_jitterdodge()) +
+  geom_hline(yintercept = 0.3, linetype = "dashed", color = "red", linewidth = 0.8) +
+  annotate("text", x = 0.5, y = 0.32, label = "Reliability threshold (0.3)",
+           hjust = 0, color = "red", size = 3.5) +
+  scale_fill_manual(values = c("0" ="#f9a340", "1" = "#7fb6cc"),
+                    labels = c("0" = "No Delirium", "1" = "Delirium")) +
+  labs(
+    title = "Mean GM Probability in AAS Nuclei Masks",
+    subtitle = "Values consistently below 0.3 suggest cortical segmentation is unreliable in brainstem",
+    x = "ROI",
+    y = "Mean GM Probability (all mask voxels)",
+    fill = "Group"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text = element_text(size = 11),
+    axis.title = element_text(size = 12)
+  )
+
+print(p_prob)
+ggsave(filename ="~/onedrive_usyd/Postdoc_Rob/Analysis/LC_volume/1mm_native/MeanGM_Probability_AAS_Nuclei_Check.svg", plot = p_prob, width = 10, height = 5, dpi = 300)
+```
