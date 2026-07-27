@@ -1,0 +1,280 @@
+---
+title: "Untitled"
+output: github_document
+---
+
+```{r setup}
+library(ukbtools)
+library(tidyverse)
+library(dbplyr)
+library(RPostgres)
+library(readxl)
+library(DBI)
+```
+
+## GitHub Documents
+
+This is an R Markdown format used for publishing markdown documents to GitHub. When you click the **Knit** button all R code chunks are run and a markdown file (.md) suitable for publishing to GitHub is generated.
+
+## Including Code
+
+You can include R code in the document as follows:
+
+```{r functions}
+calculate_statistics_mean <- function(data) {
+  results <- data.frame(
+    Variable = c(
+      "patient_age_mean", "patient_age_sd",
+      "patient_gender_female", "patient_gender_male",
+      "patient_education_<12yrs", "patient_education_12yrs", "patient_education_>12yrs",
+      "moca_total_mean", "moca_total_sd",
+      "bnt_total_mean", "bnt_total_sd",
+      "dsst_score_mean", "dsst_score_sd",
+      "cowat_total_calc_mean", "cowat_total_calc_sd",
+      "tmta_mean", "tmta_sd",
+      "tmtb_mean", "tmtb_sd",
+      "base_asa_rating_mean", "base_asa_rating_sd",
+      "new_nsqip_d_mean", "new_nsqip_d_sd",
+      "new_nsqip_sc_mean", "new_nsqip_sc_sd",
+      "overall_peak_drs_calc2_mean", "overall_peak_drs_calc2_sd"
+    ),
+    Value = c(
+      mean(data$patient_age, na.rm = TRUE), sd(data$patient_age, na.rm = TRUE),
+      sum(data$patient_gender == "Female"), sum(data$patient_gender == "Male"),
+      sum(data$patient_education == "<12 years", na.rm = TRUE), sum(data$patient_education == "12 years", na.rm = TRUE), sum(data$patient_education == ">12 years", na.rm = TRUE),
+      mean(data$moca_total, na.rm = TRUE), sd(data$moca_total, na.rm = TRUE),
+      mean(data$bnt_total, na.rm = TRUE), sd(data$bnt_total, na.rm = TRUE),
+      mean(data$dsst_score, na.rm = TRUE), sd(data$dsst_score, na.rm = TRUE),
+      mean(data$cowat_total_calc, na.rm = TRUE), sd(data$cowat_total_calc, na.rm = TRUE),
+      mean(data$tmta, na.rm = TRUE), sd(data$tmta, na.rm = TRUE),
+      mean(data$tmtb, na.rm = TRUE), sd(data$tmtb, na.rm = TRUE),
+      mean(data$base_asa_rating, na.rm = TRUE), sd(data$base_asa_rating, na.rm = TRUE),
+      mean(data$new_nsqip_d, na.rm = TRUE), sd(data$new_nsqip_d, na.rm = TRUE),
+      mean(data$new_nsqip_sc, na.rm = TRUE), sd(data$new_nsqip_sc, na.rm = TRUE),
+      mean(data$overall_peak_drs_calc2, na.rm = TRUE), sd(data$overall_peak_drs_calc2, na.rm = TRUE)
+    )
+  )
+  return(results)
+}
+
+
+calculate_statistics_median <- function(data) {
+  results <- data.frame(
+    Variable = c(
+      "patient_age_median", "patient_age_Q1", "patient_age_Q3",
+      "patient_gender_female", "patient_gender_male",
+      "patient_education_<12yrs", "patient_education_12yrs", "patient_education_>12yrs",
+      "moca_total_median", "moca_total_Q1", "moca_total_Q3",
+      "bnt_total_median", "bnt_total_Q1", "bnt_total_Q3",
+      "dsst_score_median", "dsst_score_Q1", "dsst_score_Q3",
+      "cowat_total_calc_median", "cowat_total_calc_Q1", "cowat_total_calc_Q3",
+      "tmta_median", "tmta_Q1", "tmta_Q3",
+      "tmtb_median", "tmtb_Q1", "tmtb_Q3",
+      "base_asa_rating_median", "base_asa_rating_Q1", "base_asa_rating_Q3",
+      "new_nsqip_d_median", "new_nsqip_d_Q1", "new_nsqip_d_Q3",
+      "new_nsqip_sc_median", "new_nsqip_sc_Q1", "new_nsqip_sc_Q3",
+      "overall_peak_drs_calc2_median", "overall_peak_drs_calc2_Q1", "overall_peak_drs_calc2_Q3"
+    ),
+    Value = c(
+      median(data$patient_age, na.rm = TRUE), quantile(data$patient_age, 0.25, na.rm = TRUE), quantile(data$patient_age, 0.75, na.rm = TRUE),
+      sum(data$patient_gender == "Female"), sum(data$patient_gender == "Male"),
+      sum(data$patient_education == "<12 years", na.rm = TRUE), sum(data$patient_education == "12 years", na.rm = TRUE), sum(data$patient_education == ">12 years", na.rm = TRUE),
+      median(data$moca_total, na.rm = TRUE), quantile(data$moca_total, 0.25, na.rm = TRUE), quantile(data$moca_total, 0.75, na.rm = TRUE),
+      median(data$bnt_total, na.rm = TRUE), quantile(data$bnt_total, 0.25, na.rm = TRUE), quantile(data$bnt_total, 0.75, na.rm = TRUE),
+      median(data$dsst_score, na.rm = TRUE), quantile(data$dsst_score, 0.25, na.rm = TRUE), quantile(data$dsst_score, 0.75, na.rm = TRUE),
+      median(data$cowat_total_calc, na.rm = TRUE), quantile(data$cowat_total_calc, 0.25, na.rm = TRUE), quantile(data$cowat_total_calc, 0.75, na.rm = TRUE),
+      median(data$tmta, na.rm = TRUE), quantile(data$tmta, 0.25, na.rm = TRUE), quantile(data$tmta, 0.75, na.rm = TRUE),
+      median(data$tmtb, na.rm = TRUE), quantile(data$tmtb, 0.25, na.rm = TRUE), quantile(data$tmtb, 0.75, na.rm = TRUE),
+      median(data$base_asa_rating, na.rm = TRUE), quantile(data$base_asa_rating, 0.25, na.rm = TRUE), quantile(data$base_asa_rating, 0.75, na.rm = TRUE),
+      median(data$new_nsqip_d, na.rm = TRUE), quantile(data$new_nsqip_d, 0.25, na.rm = TRUE), quantile(data$new_nsqip_d, 0.75, na.rm = TRUE),
+      median(data$new_nsqip_sc, na.rm = TRUE), quantile(data$new_nsqip_sc, 0.25, na.rm = TRUE), quantile(data$new_nsqip_sc, 0.75, na.rm = TRUE),
+      median(data$overall_peak_drs_calc2, na.rm = TRUE), quantile(data$overall_peak_drs_calc2, 0.25, na.rm = TRUE), quantile(data$overall_peak_drs_calc2, 0.75, na.rm = TRUE)
+    )
+  )
+  return(results)
+}
+
+
+# check significant difference
+# Check for normality using the Shapiro-Wilk test
+
+compare_columns <- function(data1, data2, column_name) {
+  # Perform Shapiro-Wilk test for normality
+  shapiro_test1 <- shapiro.test(data1[[column_name]])
+  shapiro_test2 <- shapiro.test(data2[[column_name]])
+  
+  print(shapiro_test1)
+  print(shapiro_test2)
+  
+  # Perform the appropriate test based on normality
+  if (shapiro_test1$p.value > 0.05 && shapiro_test2$p.value > 0.05) {
+    # Both columns are normally distributed, use t-test
+    t_test_result <- t.test(data1[[column_name]], data2[[column_name]])
+    print(t_test_result)
+    return(t_test_result)
+  } else {
+    # At least one column is not normally distributed, use Mann-Whitney U test
+    wilcox_test_result <- wilcox.test(data1[[column_name]], data2[[column_name]])
+    print(wilcox_test_result)
+    return(wilcox_test_result)
+  }
+}
+
+#calculate relevant stats
+calculate_statistics_surg <- function(data) {
+  results <- data.frame(
+    Variable = c(
+      "patient_operation_median", "patient_operation_q1", "patient_operation_q3",
+      "surg_category none",
+      "surg_category vascular",
+      "surg_category thoracic",
+      "surg_category general",
+      "surg_category orthopedic",
+      "surg_category spinal",
+      "surg_category uro gyn",
+      "surg_category low risk",
+      "surg_category cardiac"
+    ),
+    Value = c(
+      median(data$surg_operative_time, na.rm = TRUE),
+      quantile(data$surg_operative_time, probs = 0.25, na.rm = TRUE),
+      quantile(data$surg_operative_time, probs = 0.75, na.rm = TRUE),
+      sum(data$surg_category___0 == 1, na.rm = TRUE),
+      sum(data$surg_category___1 == 1, na.rm = TRUE),
+      sum(data$surg_category___2 == 1, na.rm = TRUE),
+      sum(data$surg_category___3 == 1, na.rm = TRUE),
+      sum(data$surg_category___4 == 1, na.rm = TRUE),
+      sum(data$surg_category___5 == 1, na.rm = TRUE),
+      sum(data$surg_category___6 == 1, na.rm = TRUE),
+      sum(data$surg_category___7 == 1, na.rm = TRUE),
+      sum(data$surg_category___8 == 1, na.rm = TRUE)
+    )
+  )
+  return(results)
+}
+
+```
+
+## Analysis
+
+You can also embed plots, for example
+
+```{r}
+
+# Example usage with data_nomri_nondel
+results_mri_del <- calculate_statistics(data_mri_del)
+
+#print(results_mri_del)
+
+data_mri_nodel <- data_mri %>% filter(overall_delirious_ever =="No") %>% collect()
+
+results_mri_nodel <- calculate_statistics(data_mri_nodel)
+
+data_nomri <- data_all %>% filter(timepoint == "baseline",mri_collected == 0) %>% collect()
+
+data_mri_processed <- data_mri %>% filter(patientid %in% mri_processed$patientid) %>% collect()
+# data mri, remove the "NA" in overall_delirious_ever
+data_mri_processed <- data_mri_processed %>% filter(!is.na(overall_delirious_ever)) %>% collect()
+
+# find how many had "NA" in overall_delirious_ever"
+data_mri_processed_na <- data_mri_processed %>% filter(is.na(overall_delirious_ever)) %>% collect()
+
+data_mri_collected_na <- data_mri %>% filter(is.na(overall_delirious_ever)) %>% collect()
+
+# Data processed for paper
+data_mri_processed_del <- data_mri_processed %>% filter(overall_delirious_ever == "Yes") %>% collect()
+results_mri_processed_del <- calculate_statistics(data_mri_processed_del)
+
+data_mri_processed_nondel <- data_mri_processed %>% filter(overall_delirious_ever == "No") %>% collect()
+results_mri_processed_nondel <- calculate_statistics(data_mri_processed_nondel)
+
+
+# load in relevant demographic clinical data
+load("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/Clinical_Data_Update.RData")
+# data__mri_processed - need to remove the 3 subjects not analysed
+## Clinical Data
+subject_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/subject_data_IL810_mri.csv", header=TRUE)
+subject_data <- subject_data[-88, ] #need to remove sub-164 as it is not in the pc data
+subject_data <- subject_data[-c(30,31), ] #remove sub-049 and sub-050 as they are not in the pc data
+# remove subjects
+data_mri_processed_update <- data_mri_processed[-88,]
+data_mri_processed_update <- data_mri_processed_update[-c(30,31), ] 
+
+# check the patient id are matching:
+setdiff(subject_data$patientid, data_mri_processed_update$patientid)
+
+
+# stats for updated subjects:
+data_mri_processed_update_delrium <- data_mri_processed_update %>% filter(overall_delirious_ever == "Yes") %>% collect()
+data_mri_processed_update_nondel <- data_mri_processed_update %>% filter(overall_delirious_ever == "No") %>% collect()
+
+data_mri_processed_update_results_del <- calculate_statistics_median(data_mri_processed_update_delrium)
+View(data_mri_processed_update_results_del)
+
+data_mri_processed_update_results_nondel <- calculate_statistics_median(data_mri_processed_update_nondel)
+View(data_mri_processed_update_results_nondel)
+
+# surgery types
+data_mri_processed_del_surg <-data_mri_processed_del_surg[-10,]
+data_mri_processed_nondel_surg <- data_mri_processed_nondel_surg[-c(21,61),]
+
+results_mri_del_surg <- calculate_statistics_surg(data_mri_processed_del_surg)
+View(results_mri_del_surg)
+results_mri_nondel_surg <- calculate_statistics_surg(data_mri_processed_nondel_surg)
+View(results_mri_nondel_surg)
+
+# biomarker data
+data_mri_del_biomarker <- data_mri_del_biomarker[-12,]
+data_mri_nondel_biomarker <- data_mri_nondel_biomarker[-c(22,64),]
+
+
+
+```
+
+```{r}
+# Statistic tests
+
+
+
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "overall_peak_drs_calc2")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "tmta")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "base_asa_rating")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "new_nsqip_d")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "new_nsqip_sc")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "dsst_score")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "bnt_total")
+result <- compare_columns(data_mri_processed_update_delrium, data_mri_processed_update_nondel, "moca_total")
+
+result <- compare_columns(data_mri_processed_del_surg,data_mri_processed_nondel_surg, "surg_operative_time")
+
+## Stats checks for other data
+result <- compare_columns(data_nomri, data_mri, "overall_peak_drs_calc2")
+result <- compare_columns(data_nomri, data_mri, "tmta")
+result <- compare_columns(data_nomri, data_mri, "base_asa_rating")
+result <- compare_columns(data_nomri, data_mri, "new_nsqip_d")
+result <- compare_columns(data_nomri, data_mri, "new_nsqip_sc")
+result <- compare_columns(data_nomri, data_mri, "dsst_score")
+result <- compare_columns(data_nomri, data_mri, "bnt_total")
+result <- compare_columns(data_nomri, data_mri, "moca_total")
+
+
+result <- compare_columns(data_mri_del, data_mri_nodel, "overall_peak_drs_calc2")
+result <- compare_columns(data_mri_del, data_mri_nodel, "new_nsqip_d")
+result <- compare_columns(data_mri_del, data_mri_nodel, "new_nsqip_sc")
+
+result <- compare_columns(data_mri_del, data_mri_nodel, "dsst_score")
+result <- compare_columns(data_mri_del, data_mri_nodel, "tmta")
+
+result <- compare_columns(data_nomri_del, data_nomri_nondel, "tmta")
+result <- compare_columns(data_nomri_del, data_nomri_nondel, "dsst_score")
+
+result <- compare_columns(data_mri_processed_del, data_mri_processed_nondel, "dsst_score")
+result <- compare_columns(data_mri_processed_del, data_mri_processed_nondel, "tmta")
+## look at all data scan vs non scan del vs non-del
+
+
+result <- compare_columns(data_mri_del_biomarker,data_mri_nondel_biomarker,"il8_diff")
+
+
+
+```

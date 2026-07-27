@@ -1,0 +1,1007 @@
+---
+title: "Blood biomarker analysis pre/post-op"
+output: github_document
+---
+
+```
+```{r load libraries}
+#library(lmPerm)
+library(broom)
+library(ggplot2)
+```
+## Function Code for Logistic Regression
+```{r}
+## Define the function
+run_glm_model <- function(subject_data, data_fc, response_var, covariates) {
+  # Ensure variable names are valid
+  names(subject_data) <- make.names(names(subject_data))
+  names(data_fc) <- make.names(names(data_fc))
+  response_var <- make.names(response_var)
+  covariates <- make.names(covariates)
+  
+  # Extract the response variable
+  response <- subject_data[[response_var]]
+  
+  # Combine the data
+  data_comb <- cbind(response, data_fc, subject_data[covariates])
+  data_model_df <- data.frame(data_comb)
+  # Define predictor variables
+  predictor_vars <- names(data_comb)[names(data_comb) != "response"]
+
+  # Define the function to run the logistic regression model with permutation
+  run_glm <- function(var, data_comb) {
+    formula <- as.formula(paste("response ~", var, "*", paste(covariates, collapse = " + ")))
+    model <- glm(formula, data = data_comb, family = binomial)
+    return(model)
+  }
+  
+  results <- lapply(predictor_vars, function(var) {
+    glm <- run_glm(var, data_comb)
+    summary_model <- summary(glm)
+    marginal_effects <- predict(glm, data_comb,type = "response")
+    return(list(model = glm, summary = summary_model, marginal_effects = marginal_effects))
+  })
+  names(results) <- predictor_vars  # Assign names to the results list
+  # Extract beta coefficients and p-values
+  coef_pval_list <- lapply(results, function(res) {
+    coef_table <- summary(res$model)$coefficients
+    data.frame(
+      Variable = rownames(coef_table),
+      Beta = coef_table[, "Estimate"],
+      PValue = coef_table[, "Pr(>|z|)"],
+      OddsRatio = exp(coef_table[, "Estimate"]) # Calculate odds ratio
+    )
+  })
+  #Extract AIC Values
+    aic_list <- lapply(results, function(res) {
+      aic <- AIC(res$model)
+      return(aic)
+    })
+  names(aic_list) <- predictor_vars  # Assign names to the AIC list
+  # Combine all results into a single data frame
+  coef_pval_df <- do.call(rbind, coef_pval_list)
+  
+  return(list(results = results, coef_pval_df = coef_pval_df,data_model_df = data_model_df, aic_list = aic_list))
+}
+```
+# function logistic regression for gaussian
+```{r}
+run_linear_reg <- function(subject_data, data_fc, response_var, covariates) {
+  # Ensure variable names are valid
+  names(subject_data) <- make.names(names(subject_data))
+  names(data_fc) <- make.names(names(data_fc))
+  response_var <- make.names(response_var)
+  covariates <- make.names(covariates)
+  
+  # Extract the response variable
+  response <- subject_data[[response_var]]
+  
+  # Combine the data
+  data_comb <- cbind(response, data_fc, subject_data[covariates])
+  data_model_df <- data.frame(data_comb)
+  predictor_vars <- names(data_comb)[names(data_comb) != "response"]
+  
+  # Define the function to run the linear regression model
+  run_glm <- function(var, data_comb) {
+    formula <- as.formula(paste("response ~", var, "*", paste(covariates, collapse = " + ")))
+    model <- glm(formula, data = data_comb, family = gaussian)
+    return(model)
+  }
+  
+  results <- lapply(predictor_vars, function(var) {
+    glm <- run_glm(var, data_comb)
+    summary_model <- summary(glm)
+    fitted_vals <- predict(glm, data_comb, type = "response")
+    return(list(model = glm, summary = summary_model, fitted = fitted_vals))
+  })
+  names(results) <- predictor_vars
+  
+  # Extract coefficients, standard errors, t-values, and p-values
+  coef_pval_list <- lapply(results, function(res) {
+    coef_table <- summary(res$model)$coefficients
+    data.frame(
+      Variable = rownames(coef_table),
+      Estimate = coef_table[, "Estimate"],
+      StdError = coef_table[, "Std. Error"],
+      tValue = coef_table[, "t value"],
+      PValue = coef_table[, "Pr(>|t|)"]
+    )
+  })
+  
+  # Extract AIC values
+  aic_list <- lapply(results, function(res) {
+    aic <- AIC(res$model)
+    return(aic)
+  })
+  names(aic_list) <- predictor_vars
+  
+  coef_pval_df <- do.call(rbind, coef_pval_list)
+  
+  return(list(results = results, coef_pval_df = coef_pval_df, data_model_df = data_model_df, aic_list = aic_list))
+}
+```
+
+## Plot on the Brain Significant Logs Odds Ratio
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    scale_fill_gradient2(low = "#C03B2B", mid = "white", high = "#0C7D79", midpoint = 0) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+  #setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+ setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/lm_model/") 
+  # Save the plot as an SVG file
+  ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+
+plot_brain_data_oddsratio <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 1, 
+               limits = c(0, max(data$SignificantCoefficient, na.rm = TRUE))) +
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))
+  
+  # Print the plot
+  print(p)
+  #setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+ #setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/lm_model/") 
+  # Save the plot as an SVG file
+  ggsave(paste0(filename, ".svg"), plot = p, width = 10, height = 10)
+}
+```
+```{r}
+plot_avg_fc_vs_var <- function(
+  fc_data,
+  y_vector,
+  group_vector,
+  y_label = "Y Variable",
+  plot_title = "Relationship between Avg PC and MMN Avg Amplitude",
+  filename = "avg_fc_vs_yvar.svg"
+) {
+  # Calculate average FC
+  avg_fc <- rowMeans(fc_data, na.rm = TRUE)
+  
+  # Correlation
+  cor_avg_fc <- cor.test(y_vector, avg_fc, use = "complete.obs")
+  
+  # Prepare data frame
+  plot_df <- data.frame(
+    avg_fc = avg_fc,
+    y_var = y_vector,
+    group = factor(group_vector, levels = c(0, 1), labels = c("Non-Delirious", "Delirious"))
+  )
+  colours <- c("Non-Delirious" = "#f9a340", "Delirious" = "#7fb6cc")
+  
+  # Plot
+  library(ggplot2)
+  p <- ggplot(plot_df, aes(x = avg_fc, y = y_var, color = group)) +
+    geom_point(size = 3) +
+    geom_smooth(aes(group = 1), method = "lm", se = FALSE, color = "black") +
+    annotate("text", x = max(avg_fc, na.rm = TRUE) * 0.8, y = max(plot_df$y_var, na.rm = TRUE) * 0.9, 
+             label = paste("r =", round(cor_avg_fc$estimate, 2), 
+                           "\np =", signif(cor_avg_fc$p.value, 3)), 
+             color = "black", size = 5) +
+    labs(
+      title = plot_title,
+      x = "Avg FC",
+      y = y_label,
+      color = "Delirium Group"
+    ) +
+    scale_color_manual(values = colours) +
+    theme_minimal()
+  
+  print(p)
+  ggsave(filename = filename, plot = p, width = 8, height = 6, dpi = 300)
+}
+
+# Example usage:
+# plot_avg_fc_vs_var(fc_data, subject_data_mmn_update$peak_time, subject_data_mmn_update$bin_delirium, y_label = "Peak Time", plot_title = "Relationship between Avg NBM FC and Peak Time", filename = "avg_nbm_fc_vs_mmn_peaktime.svg")
+```
+
+```{r load data}
+# Load the data
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data')
+data <- read.csv("NPQ_2024-10-04_Lennertz_CNS120_Results_REDCap_IDs.csv",header=TRUE, stringsAsFactors = FALSE)
+
+#separate the pre and postop data
+baseline_data <- data[data$timepoint == "Baseline", ]
+POD1_data <- data[data$timepoint == "POD1", ]
+```
+
+## plot all the data
+```{r plot all data}
+# scatter plot 
+# Prepare data frame
+match_sub<- match(baseline_data$sample_id, POD1_data$sample_id)
+baseline_filter <- !is.na(match_sub) & match_sub > 0
+baseline_data <- baseline_data[baseline_filter, ]
+
+POD1_filter <- !is.na(match_sub) & match_sub > 0
+POD1_data <- POD1_data[POD1_filter, ]
+
+combined_data <- rbind(
+    data.frame(
+    timepoint = rep("Baseline", length(baseline_data$sample_id)),
+    patient_id = baseline_data$sample_id,
+    pTau181 = baseline_data$pTau.181,
+    pTau217 = baseline_data$pTau.217,
+    pTau231 = baseline_data$pTau.231,
+    NEFL = baseline_data$NEFL,
+    MAPT = baseline_data$MAPT
+    ),
+    data.frame(
+    timepoint = rep("POD 1", length(POD1_data$sample_id)),
+    patient_id = POD1_data$sample_id,
+    pTau181 = POD1_data$pTau.181,
+    pTau217 = POD1_data$pTau.217,
+    pTau231 = POD1_data$pTau.231,
+    NEFL = baseline_data$NEFL,
+    MAPT = baseline_data$MAPT
+    )
+)
+
+colours <- c("Baseline" = "#f9a340", "POD 1" = "#7fb6cc")
+  
+  # Plot
+  library(ggplot2)
+  p <- ggplot(combined_data, aes(x = factor(timepoint), y = NEFL, color = timepoint)) +
+    geom_point(size = 3) +
+    geom_line(aes(group = patient_id), color = "grey60") +
+    labs(
+      title = "NEFL Levels Pre and Post-Operatively",
+      x = "Timepoint",
+      y = "NEFL",
+      color = "Timepoint"
+    ) +
+    scale_color_manual(values = colours) +
+    theme_minimal()
+  
+  print(p)
+  ggsave(filename = "NEFL_Levels_Baseline_Post-op.svg", plot = p, width = 8, height = 6, dpi = 300)
+
+```
+## compare biomarkers in the MRI dataset
+```{r compare biomarkers}
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/csf_regress_redo')
+
+
+# Load the MRI clinical data
+subject_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/subject_data_IL810_mri.csv")
+cog_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/mri_scanner_cog.csv")
+# Remove (22) from patient_id in row 21 if present
+subject_data$patientid[21] <- gsub("\\(22\\)$", "", subject_data$patientid[21])
+cog_data$patientid[21] <- gsub("\\(22\\)$", "", cog_data$patientid[21])
+
+# Merge data based on biomarker and MRI patient IDs -  data structure so repeats for subject for the different timepoints
+biomarker_mri_data <- merge(subject_data, combined_data, by.x = "patientid", by.y = "patient_id", all.x = TRUE)
+biomarker_cog_mri_data <- merge(cog_data, combined_data, by.x = "patientid", by.y = "patient_id", all.x = TRUE)
+#filter for only the preop/baseline data
+biomarker_cog_baseline <- merge(cog_data, baseline_data, by.x = "patientid", by.y = "sample_id", all.x = TRUE)
+biomarker_cog_POD1 <- merge(cog_data, POD1_data, by.x = "patientid", by.y = "sample_id", all.x = TRUE)
+```
+
+```{r}
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/csf_regress_redo')
+
+baseline_data <- biomarker_cog_mri_data[biomarker_cog_mri_data$timepoint == "Baseline", ]
+#load in FC data for ACh
+fc_nbm_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/csf_regress_redo/avg_nbm_fc_400_all_subs.csv", header = FALSE)
+# load in only sig difference - 
+
+#sig_diff_nbmfc <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/sig_diff_nbm_fc.csv", header = FALSE)
+sig_diff_nbmfc <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/csf_regress_redonbm_combined_fc_sig_plot.csv", header = FALSE)
+## Filtering the FC for only significant ROIs
+# If sig_diff_nbmfc is a vector or single-row data frame
+sig_fc_nbm <- fc_nbm_data
+zero_cols <- as.numeric(sig_diff_nbmfc[1:400, 1]) == 0
+# Set those columns to zero across all rows
+sig_fc_nbm[, zero_cols] <- 0
+roi_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/code/schaef_400roi_names.csv", header = FALSE)
+colnames(sig_fc_nbm) <- roi_names$V1[1:400]
+```
+## Run the logistic regression model
+```{r run logistic regression}
+# Remove columns that are all zeros - only run on significant ROIs
+#data_fc <- sig_fc_nbm[, colSums(sig_fc_nbm != 0) > 0]
+colnames(fc_nbm_data) <- roi_names$V1[1:400]
+#run the glm model
+#biomarker_cog_baseline$tmtb
+response_var <- "bin_delirium"  # Ensure this matches the column name in your data
+#covariates <- "pTau.181 + tmtb"
+covariates <- c("pTau.181","patient_age","patient_gender")
+glm_nbm_ptau181_preop <- run_glm_model(biomarker_cog_baseline, fc_nbm_data, response_var, covariates)
+
+View(glm_nbm_ptau181_preop$coef_pval_df)
+# Extract the interactions between ROI and covariates
+interactions <- glm_nbm_ptau181_preop$coef_pval_df[grep(":", glm_nbm_ptau181_preop$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+# FDR correction for multiple comparisons
+interactions$FDR_PValue <- p.adjust(interactions$PValue, method = "fdr")
+# Add a column to indicate FDR-significant coefficients
+interactions$SignificantCoefficient_FDR <- ifelse(interactions$FDR_PValue < 0.05, interactions$Beta, 0)
+
+# Extract significant interactions after FDR correction
+sig_interactions_FDR <- interactions[interactions$FDR_PValue < 0.05, ]
+View(sig_interactions_FDR)
+
+
+```
+
+
+
+# plot on the brain
+```{r plot on the brain}
+# Just plot all zeros except for significant interactions
+roi_df <- data.frame(
+  label = roi_names$V1,
+  SignificantCoefficient = 0
+)
+# Fill in significant coefficients for significant ROIs
+roi_df$SignificantCoefficient[roi_df$label %in% sig_interactions$label] <-
+  sig_interactions$SignificantCoefficient[match(roi_df$label, sig_interactions$label, nomatch = 0)]
+
+# Get the significant odds ratio
+plot_brain_data(roi_df, "PreOp_pTau181_avg_FC_nbM_Sig_noFDR")
+```
+# run across all the FC ROIs regardless of SignificantCoefficient
+```{r run across all the FC ROIs}
+colnames(fc_nbm_data) <- roi_names$V1[1:400]
+
+response_var <- "bin_delirium"  # Ensure this matches the column name in your data
+covariates <- c("pTau.217", "patient_age", "patient_gender")
+glm_nbm_ptau181_preop <- run_glm_model(biomarker_cog_baseline, fc_nbm_data, response_var, covariates)
+
+View(glm_nbm_ptau181_preop$coef_pval_df)
+# Extract the interactions between ROI and covariates
+interactions <- glm_nbm_ptau181_preop$coef_pval_df[grep(":", glm_nbm_ptau181_preop$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+#plot significant ones onto brain
+data_plot <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+plot_brain_data(data_plot, "PreOp_pTau217_delirium_FC_nbM_all_age_gender_covariates_fdr")
+
+
+sig_interactions$FDR <- p.adjust(sig_interactions$PValue, method = "fdr")
+
+```
+# Run linear model on avg nbM FC and biomarkers
+```{r}
+# linear model
+#avg_fc <- rowMeans(fc_nbm_data, na.rm = TRUE)
+# linear model between avg_fc nbm and nefl (and other blood markers)
+# Make sure NEFL, patient_age, and patient_gender are in biomarker_cog_baseline
+lm_df <- data.frame(
+  avg_fc = avg_fc,
+  NEFL= biomarker_cog_baseline$NEFL,
+  MAPT = biomarker_cog_baseline$MAPT,
+  pTau231 = biomarker_cog_baseline$pTau.231,
+  pTau181 = biomarker_cog_baseline$pTau.181,
+  age = biomarker_cog_baseline$patient_age,
+  gender = as.factor(biomarker_cog_baseline$patient_gender)
+)
+# Run the linear regression
+model1 <- lm(avg_fc ~  NEFL + age + gender, data = lm_df)
+model2 <- lm(avg_fc ~  MAPT + age + gender, data = lm_df)
+model3 <- lm(avg_fc ~  pTau231 + age + gender, data = lm_df)
+model4 <- lm(avg_fc ~  pTau181 + age + gender, data = lm_df)
+model5 <- lm(avg_fc ~  pTau181*pTau231 + age + gender, data = lm_df)
+# Calculate AIC
+# Calculate AIC for each
+aic1 <- AIC(model1)
+aic2 <- AIC(model2)
+aic3 <- AIC(model3)
+aic4 <- AIC(model4)
+aic5 <- AIC(model5)
+print(aic5)
+# Compare
+aic_values <- c(model1 = aic1, model2 = aic2, model3 = aic3, model4 = aic4)
+print(aic_values)
+# The model with the **lowest AIC** is preferred.
+best_model_name <- names(which.min(aic_values))
+cat("Best model by AIC:", best_model_name, "\n")
+
+# View the summary
+#summary(lm_avgfc_biomarker)
+# Print results
+print(aic_value)
+print(bic_value)
+
+
+plot_avg_fc_vs_var(avg_fc, biomarker_cog_baseline$pTau.181, biomarker_cog_baseline$bin_delirium, y_label = "Avg FC nbM", plot_title = "Relationship between Avg NBM FC and PreOp pTau181", filename = "avg_nbm_fc_vs_preopptau181.svg")
+
+
+```
+## run lm for biomarkers
+```{r}
+run_lm_biomarker_fc <- function(
+  biomarker_var,           # e.g., "pTau231"
+  fc_data,                 # your FC data frame (ROIs as columns)
+  biomarker_data,          # your subject data frame
+  covariates = c("age", "gender"), # covariates to include
+  output_csv = NULL        # optional: filename to save results
+) {
+  coef_df <- data.frame()
+  # Prepare the data frame for modeling
+  lm_df <- data.frame(
+    age = biomarker_data$patient_age,
+    gender = as.factor(biomarker_data$patient_gender)
+  )
+  # Add the biomarker variable
+  lm_df[[biomarker_var]] <- biomarker_data[[biomarker_var]]
+  
+  for (roi in colnames(fc_data)) {
+    lm_df$avg_fc <- fc_data[[roi]]
+    formula_str <- paste0("avg_fc ~ ", biomarker_var, " + ", paste(covariates, collapse = " + "))
+    lm_fit <- lm(as.formula(formula_str), data = lm_df)
+    coef_table <- summary(lm_fit)$coefficients
+    # Extract only the biomarker row
+    if (biomarker_var %in% rownames(coef_table)) {
+      coef_df <- rbind(coef_df, data.frame(
+        ROI = roi,
+        Estimate = coef_table[biomarker_var, "Estimate"],
+        StdError = coef_table[biomarker_var, "Std. Error"],
+        tValue = coef_table[biomarker_var, "t value"],
+        PValue = coef_table[biomarker_var, "Pr(>|t|)"]
+      ))
+    }
+  }
+  # FDR correction
+  coef_df$PValue_FDR <- p.adjust(coef_df$PValue, method = "fdr")
+  # Optionally save to CSV
+  if (!is.null(output_csv)) {
+    write.csv(coef_df, output_csv, row.names = FALSE)
+  }
+  return(coef_df)
+}
+
+# Example usage:
+# ptau231_results <- run_lm_biomarker_fc(
+#   biomarker_var = "pTau231",
+#   fc_data = fc_nbm_data,
+#   biomarker_data = biomarker_cog_baseline,
+#   covariates = c("age", "gender"),
+#   output_csv = "LM_eachROI_FCnbM_pTau231_covariates_age_gender.csv"
+# )
+```
+
+
+# run the linear model across all ROIs in the FC
+```{r}
+setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/lm_model/')
+# Run the linear regression across all ROIs in the FC
+colnames(fc_nbm_data) <- roi_names$V1[1:400]
+
+# Make sure NEFL, patient_age, and patient_gender are in biomarker_cog_baseline
+lm_df <- data.frame(
+  #fc_nbm_data = fc_nbm_data,
+  #NEFL= biomarker_cog_baseline$NEFL,
+  #MAPT = biomarker_cog_baseline$MAPT,
+  pTau231 = biomarker_cog_baseline$pTau.231,
+  age = biomarker_cog_baseline$patient_age,
+  gender = as.factor(biomarker_cog_baseline$patient_gender)
+)
+lm_results <- list()
+coef_pval <- list()
+all_coef_pval_df <- data.frame()  # Initialize an empty data frame to store all results
+
+# Run the linear regression for each ROI and save outputs
+for (roi in colnames(fc_nbm_data)) {
+  lm_df$avg_fc <- fc_nbm_data[[roi]]
+  lm_fit <- lm(avg_fc ~ NEFL + age + gender, data = lm_df)
+  lm_results[[roi]] <- summary(lm_fit)
+  coef_table <- summary(lm_fit)$coefficients
+  coef_pval[[roi]] <- data.frame(
+    ROI = roi,
+    Variable = rownames(coef_table),
+    Estimate = coef_table[, "Estimate"],
+    StdError = coef_table[, "Std. Error"],
+    tValue = coef_table[, "t value"],
+    PValue = coef_table[, "Pr(>|t|)"]
+  )
+  all_coef_pval_df <- rbind(all_coef_pval_df, coef_pval[[roi]])
+}
+
+# Optionally, save all_coef_pval_df to CSV for later use
+# write.csv(all_coef_pval_df, "all_roi_lm_results.csv", row.names = FALSE)
+# View the summary
+#summary(lm_avgfc_biomarker)
+# ...existing code...
+nefl_coef_df <- data.frame()  # To store NEFL coefficients for each ROI
+
+for (roi in colnames(fc_nbm_data)) {
+  lm_df$avg_fc <- fc_nbm_data[[roi]]
+  lm_fit <- lm(avg_fc ~ NEFL + age + gender, data = lm_df)
+  coef_table <- summary(lm_fit)$coefficients
+  # Extract only the NEFL row
+  if ("NEFL" %in% rownames(coef_table)) {
+    nefl_coef_df <- rbind(nefl_coef_df, data.frame(
+      ROI = roi,
+      Estimate = coef_table["NEFL", "Estimate"],
+      StdError = coef_table["NEFL", "Std. Error"],
+      tValue = coef_table["NEFL", "t value"],
+      PValue = coef_table["NEFL", "Pr(>|t|)"]
+    ))
+  }
+}
+
+# Now nefl_coef_df contains the NEFL coefficient for each ROI
+View(nefl_coef_df)
+# FDR corrected p-values
+nefl_coef_df$PValue_FDR <- p.adjust(nefl_coef_df$PValue, method = "fdr")
+
+#find significant relationships
+sig_nefl_coef_df <- nefl_coef_df[nefl_coef_df$PValue_FDR < 0.05, ]
+write.csv(nefl_coef_df, "LM_eachROI_FCnbM_NEFL_covariates_age_gender.csv", row.names = TRUE)
+
+# run it for MAPT
+mapt_coef_df <- data.frame()  # To store NEFL coefficients for each ROI
+
+for (roi in colnames(fc_nbm_data)) {
+  lm_df$avg_fc <- fc_nbm_data[[roi]]
+  lm_fit <- lm(avg_fc ~ MAPT + age + gender, data = lm_df)
+  coef_table <- summary(lm_fit)$coefficients
+  # Extract only the NEFL row
+  if ("MAPT" %in% rownames(coef_table)) {
+    mapt_coef_df <- rbind(mapt_coef_df, data.frame(
+      ROI = roi,
+      Estimate = coef_table["MAPT", "Estimate"],
+      StdError = coef_table["MAPT", "Std. Error"],
+      tValue = coef_table["MAPT", "t value"],
+      PValue = coef_table["MAPT", "Pr(>|t|)"]
+    ))
+  }
+}
+
+# Now nefl_coef_df contains the NEFL coefficient for each ROI
+View(mapt_coef_df)
+# FDR corrected p-values
+mapt_coef_df$PValue_FDR <- p.adjust(mapt_coef_df$PValue, method = "fdr")
+
+#find significant relationships
+sig_mapt_coef_df <- mapt_coef_df[mapt_coef_df$PValue_FDR < 0.05, ]
+write.csv(nefl_coef_df, "LM_eachROI_FCnbM_MAPT_covariates_age_gender.csv", row.names = TRUE)
+
+# run it for pTau231
+ptau231_coef_df <- data.frame()  # To store NEFL coefficients for each ROI
+
+for (roi in colnames(fc_nbm_data)) {
+  lm_df$avg_fc <- fc_nbm_data[[roi]]
+  lm_fit <- lm(avg_fc ~ pTau231 + age + gender, data = lm_df)
+  coef_table <- summary(lm_fit)$coefficients
+  # Extract only the NEFL row
+  if ("pTau231" %in% rownames(coef_table)) {
+    ptau231_coef_df <- rbind(ptau231_coef_df, data.frame(
+      ROI = roi,
+      Estimate = coef_table["pTau231", "Estimate"],
+      StdError = coef_table["pTau231", "Std. Error"],
+      tValue = coef_table["pTau231", "t value"],
+      PValue = coef_table["pTau231", "Pr(>|t|)"]
+    ))
+  }
+}
+# FDR corrected p-values
+ptau231_coef_df$PValue_FDR <- p.adjust(ptau231_coef_df$PValue, method = "fdr")
+# Now nefl_coef_df contains the NEFL coefficient for each ROI
+View(ptau231_coef_df)
+
+
+#find significant relationships
+sig_ptau231_coef_df <- ptau231_coef_df[ptau231_coef_df$PValue_FDR < 0.05, ]
+write.csv(ptau231_coef_df, "LM_eachROI_FCnbM_pTau231_covariates_age_gender.csv", row.names = TRUE)
+
+biomarker_cog_baseline$pTau.181
+ptau181_results <- run_lm_biomarker_fc(
+  biomarker_var = "pTau.181",
+  fc_data = fc_nbm_data,
+  biomarker_data = biomarker_cog_baseline,
+  covariates = c("age", "gender"),
+  output_csv = "LM_eachROI_FCnbM_pTau181_covariates_age_gender.csv")
+#significance
+sig_ptau181_coef_df <- ptau181_results[ptau181_results$PValue_FDR < 0.05, ]
+
+
+```
+
+# plot correlation relationship
+```{r plot correlation relationship}
+plot_avg_fc_vs_var(
+  fc_data = fc_nbm_data,                             # your FC matrix/data frame
+  y_vector = biomarker_cog_baseline$pTau.181,       # your outcome variable
+  group_vector = biomarker_cog_baseline$bin_delirium,   # your group variable (e.g., 0/1)
+  y_label = "Pre-Op pTau181",                       # y-axis label
+  plot_title = "Relationship between Pre-Op pTau181 and Avg nbM FC", # plot title
+  filename = "Avg_fcnbm_vs_preoppTau181.svg"                # output file name
+)
+```
+
+# just plotting the raw values
+```{r plot raw values}
+# Plot the raw values of pTau181 pre-op
+y_vector <- biomarker_cog_baseline$pTau.181
+fc_data <- fc_nbm_data[["17Networks_LH_DorsAttnA_SPL_3"]]
+group_vector <- biomarker_cog_baseline$bin_delirium
+y_label <- "Pre-Op pTau181"
+plot_title <- "Relationship between Pre-Op pTau181 and FC nbM to DorsAttnA_SPL_3"
+cor_avg_fc <- cor.test(y_vector, fc_data, use = "complete.obs")
+    plot_df <- data.frame(fc_data = fc_data, y_var = y_vector, 
+        group = factor(group_vector, levels = c(0, 1), labels = c("Non-Delirious", 
+            "Delirious")))
+    colours <- c(`Non-Delirious` = "#f9a340", Delirious = "#7fb6cc")
+    library(ggplot2)
+    p2 <- ggplot(plot_df, aes(x = fc_data, y = y_var, color = group)) + 
+        geom_point(size = 3) + geom_smooth(aes(group = 1), method = "lm", 
+        se = FALSE, color = "black") + annotate("text", x = max(fc_data, 
+        na.rm = TRUE) * 0.8, y = max(plot_df$y_var, na.rm = TRUE) * 
+        0.9, label = paste("r =", round(cor_avg_fc$estimate, 
+        2), "\np =", signif(cor_avg_fc$p.value, 3)), color = "black", 
+        size = 5) + labs(title = plot_title, x = "FC ROI", y = y_label, 
+        color = "Delirium Group") + scale_color_manual(values = colours) + 
+        theme_minimal()
+    print(p2)
+    ggsave(filename = "FC nbM to DorsAttnA SPL3 vs Pre-Op pTau181.svg", plot = p2, width = 8, height = 6, dpi = 300)
+```
+
+# relationship between pTau181 and 
+```{r relationship between pTau181 and MMN}
+p1 <-ggplot(biomarker_cog_baseline, aes(x = pTau.181, y = overall_peak_drs_calc2)) +
+  geom_point(size = 3, color = "#7fb6cc") +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  labs(
+    title = "Relationship between Pre-Op pTau181 and Peak DRS",
+    x = "Pre-Op pTau181",
+    y = "Peak DRS"
+  ) +
+  theme_minimal()
+  print(p1)
+  ggsave(filename = "Relationship_peakDrsCacl2_PreOp_pTau181.svg",plot=p1, width = 8, height = 6, dpi = 300)
+
+cor_res <- cor.test(biomarker_cog_POD1$pTau.181, biomarker_cog_POD1$overall_peak_drs_calc2, method = "spearman")
+
+p1 <- ggplot(biomarker_cog_POD1, aes(x = pTau.181, y = overall_peak_drs_calc2)) +
+  geom_point(size = 3, color = "#7fb6cc") +
+  geom_smooth(method = "lm", se = TRUE, color = "black") +
+  annotate(
+    "text",
+    x = max(biomarker_cog_POD1$pTau.181, na.rm = TRUE) * 0.8,
+    y = max(biomarker_cog_POD1$overall_peak_drs_calc2, na.rm = TRUE) * 0.9,
+    label = paste0("rho = ", round(cor_res$estimate, 2), "\np = ", signif(cor_res$p.value, 3)),
+    color = "black",
+    size = 5
+  ) +
+  labs(
+    title = "Relationship between Post-Op pTau181 and Peak DRS",
+    x = "Post-Op pTau181",
+    y = "Peak DRS"
+  ) +
+  theme_minimal()
+
+print(p1)
+
+  ggsave(filename = "Relationship_peakDrsCacl2_PostOp_pTau181.svg",plot=p1, width = 8, height = 6, dpi = 300)
+
+
+```
+
+# Relationship between pTau181 and Cognition schaef_400roi_names
+```{r relationship between pTau181 and cognition}
+# Load the MRI clinical data
+data_fc <- sig_fc_nbm[, colSums(sig_fc_nbm != 0) > 0]
+#run the glm model
+#biomarker_cog_baseline$tmtb
+response_var <- "tmtb"  # Ensure this matches the column name in your data
+covariates <- "pTau.181"
+glm_nbm_ptau181_preop_tmtb <- run_linear_reg(biomarker_cog_baseline, data_fc, response_var, covariates)
+
+View(glm_nbm_ptau181_preop_tmtb$coef_pval_df)
+# Extract the interactions between ROI and covariates
+interactions <- glm_nbm_ptau181_preop_tmtb$coef_pval_df[grep(":", glm_nbm_ptau181_preop_tmtb$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+response_var <- "pTau.181"  # Ensure this matches the column name in your data
+covariates <- c("patient_age", "patient_gender")
+glm_nbm_ptau181_preop_tmtb <- run_linear_reg(biomarker_cog_baseline, fc_nbm_data, response_var, covariates)
+
+View(glm_nbm_ptau181_preop_tmtb$coef_pval_df)
+# Extract the interactions between ROI and covariates
+# Extract only the coefficients for the FC ROI variables (not interactions or covariates)
+fc_roi_names <- colnames(fc_nbm_data)
+# In the coef_pval_df, the Variable column should match the FC ROI names exactly for main effects
+fc_estimates <- glm_nbm_ptau181_preop_tmtb$coef_pval_df[
+  grepl("^X", glm_nbm_ptau181_preop_tmtb$coef_pval_df$Variable) & !grepl(":", glm_nbm_ptau181_preop_tmtb$coef_pval_df$Variable),
+]
+View(fc_estimates)
+
+
+fc_estimates$SignificantCoefficient <- ifelse(fc_estimates$PValue < 0.05, fc_estimates$Estimate, 0)
+
+sig_interactions <- fc_estimates[fc_estimates$PValue < 0.05, ]
+View(sig_interactions)
+fc_estimates$label <- sub(":.*", "", fc_estimates$Variable)
+fc_estimates$label <- sub("X", "", fc_estimates$label)
+
+data_plot <- data.frame(label = fc_estimates$label, SignificantCoefficient = fc_estimates$SignificantCoefficient)
+plot_brain_data(data_plot, "PreOp_pTau181_FC_nbM_all_age_gender_covariates")
+```
+# run correlation across each FC nbM ROI to pTau181
+```{r}
+ptau_vec <- biomarker_cog_baseline$pTau.181
+
+cor_results <- sapply(fc_nbm_data, function(roi) {
+  cor.test(roi, ptau_vec, use = "complete.obs")$estimate
+})
+
+pval_results <- sapply(fc_nbm_data, function(roi) {
+  cor.test(roi, ptau_vec, use = "complete.obs")$p.value
+})
+
+# Combine into a data frame for easy viewing
+colnames(fc_nbm_data)<-roi_names$V1[1:400]
+cor_summary <- data.frame(
+  ROI = colnames(fc_nbm_data),
+  Correlation = cor_results,
+  PValue = pval_results
+)
+
+View(cor_summary)
+# filter for significant correlations
+sig_cor_summary <- cor_summary[cor_summary$PValue < 0.05, ]
+View(sig_cor_summary)
+
+#plot onto the brain
+# Create a data frame with all ROI labels and fill with 0
+sig_corr_data <- data.frame(
+  label = roi_names$V1[1:400],
+  SignificantCoefficient = 0
+)
+# Fill in significant correlations for ROIs present in sig_cor_summary
+match_idx <- match(sig_cor_summary$ROI, sig_corr_data$label)
+sig_corr_data$SignificantCoefficient[match_idx[!is.na(match_idx)]] <- sig_cor_summary$Correlation[!is.na(match_idx)]
+
+#plot significant ones onto brain
+plot_brain_data(sig_corr_data, "Correlation_Sig_PreOp_pTau181_FC_nbM_allROIs")
+
+
+# FDR correction on correlation p-values
+cor_summary$PValue_FDR <- p.adjust(cor_summary$PValue, method = "fdr")
+
+# Filter for significant correlations after FDR correction
+sig_cor_summary_fdr <- cor_summary[cor_summary$PValue_FDR < 0.05, ]
+View(sig_cor_summary_fdr)
+
+# Update the plotting data for FDR-significant ROIs
+sig_corr_data_fdr <- data.frame(
+  label = roi_names$V1[1:400],
+  SignificantCoefficient = 0
+)
+match_idx_fdr <- match(sig_cor_summary_fdr$ROI, sig_corr_data_fdr$label)
+sig_corr_data_fdr$SignificantCoefficient[match_idx_fdr[!is.na(match_idx_fdr)]] <- sig_cor_summary_fdr$Correlation[!is.na(match_idx_fdr)]
+
+# Plot FDR-significant correlations onto the brain
+plot_brain_data(sig_corr_data_fdr, "Correlation_FDR_Sig_PreOp_pTau181_FC_nbM_allROIs")
+
+
+```
+# Relationship between NEFL biomarker and avg. FC
+```{r}
+avg_nbm_fc <- rowMeans(fc_nbm_data, na.rm = TRUE)
+#run the glm model
+#biomarker_cog_baseline$tmtb
+response_var <- "avg_nbm_fc"  # Ensure this matches the column name in your data
+covariates <- c("patient_age", "patient_gender")
+glm_nbm_ptau181_preop_tmtb <- run_linear_reg(biomarker_cog_baseline, fc_nbm_data, response_var, covariates)
+
+View(glm_nbm_ptau181_preop_tmtb$coef_pval_df)
+# Extract the interactions between ROI and covariates
+# Extract only the coefficients for the FC ROI variables (not interactions or covariates)
+fc_roi_names <- colnames(fc_nbm_data)
+# In the coef_pval_df, the Variable column should match the FC ROI names exactly for main effects
+fc_estimates <- glm_nbm_ptau181_preop_tmtb$coef_pval_df[
+  grepl("^X", glm_nbm_ptau181_preop_tmtb$coef_pval_df$Variable) & !grepl(":", glm_nbm_ptau181_preop_tmtb$coef_pval_df$Variable),
+]
+View(fc_estimates)
+
+
+fc_estimates$SignificantCoefficient <- ifelse(fc_estimates$PValue < 0.05, fc_estimates$Estimate, 0)
+
+sig_interactions <- fc_estimates[fc_estimates$PValue < 0.05, ]
+View(sig_interactions)
+fc_estimates$label <- sub(":.*", "", fc_estimates$Variable)
+fc_estimates$label <- sub("X", "", fc_estimates$label)
+
+data_plot <- data.frame(label = fc_estimates$label, SignificantCoefficient = fc_estimates$SignificantCoefficient)
+plot_brain_data(data_plot, "PreOp_pTau181_FC_nbM_all_age_gender_covariates")
+
+```
+# Relationship between pTau181 and PC
+```{r relationship between pTau181 and PC}
+## Load in the data
+pc_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/avg_pc_all_subs.csv", header = FALSE)
+pc_data <- pc_data[,1:400]
+colnames(pc_data) <- roi_names$V1[1:400]
+biomarker_cog_baseline <- biomarker_cog_baseline[-88,] #need to remove sub-164 as it is not in the pc data
+biomarker_cog_POD1 <- biomarker_cog_POD1[-88,] #need to remove sub-164 as it is not in the pc data
+#filter fc_data to match mmn_data
+#whole brain avg. pc for each subject
+
+ptau_vec <- biomarker_cog_baseline$pTau.181
+
+cor_results <- sapply(pc_data, function(roi) {
+  cor.test(roi, ptau_vec, use = "complete.obs")$estimate
+})
+
+pval_results <- sapply(pc_data, function(roi) {
+  cor.test(roi, ptau_vec, use = "complete.obs")$p.value
+})
+
+# Combine into a data frame for easy viewing
+cor_summary <- data.frame(
+  ROI = colnames(pc_data),
+  Correlation = cor_results,
+  PValue = pval_results
+)
+
+View(cor_summary)
+# filter for significant correlations
+sig_cor_summary <- cor_summary[cor_summary$PValue < 0.05, ]
+View(sig_cor_summary)
+
+#plot onto the brain
+# Create a data frame with all ROI labels and fill with 0
+#sig_corr_data <- data.frame(
+  #label = roi_names$V1[1:400],
+  #SignificantCoefficient = 0
+#)
+# Fill in significant correlations for ROIs present in sig_cor_summary
+#match_idx <- match(sig_cor_summary$ROI, sig_corr_data$label)
+#sig_corr_data$SignificantCoefficient[match_idx[!is.na(match_idx)]] <- sig_cor_summary$Correlation[!is.na(match_idx)]
+
+#plot significant ones onto brain
+#plot_brain_data(sig_corr_data, "Correlation_Sig_PreOp_pTau181_FC_nbM_allROIs")
+
+
+# FDR correction on correlation p-values
+cor_summary$PValue_FDR <- p.adjust(cor_summary$PValue, method = "fdr")
+
+# Filter for significant correlations after FDR correction
+sig_cor_summary_fdr <- cor_summary[cor_summary$PValue_FDR < 0.05, ]
+View(sig_cor_summary_fdr)
+
+# Update the plotting data for FDR-significant ROIs
+sig_corr_data_fdr <- data.frame(
+  label = roi_names$V1[1:400],
+  SignificantCoefficient = 0
+)
+match_idx_fdr <- match(sig_cor_summary_fdr$ROI, sig_corr_data_fdr$label)
+sig_corr_data_fdr$SignificantCoefficient[match_idx_fdr[!is.na(match_idx_fdr)]] <- sig_cor_summary_fdr$Correlation[!is.na(match_idx_fdr)]
+
+# Plot FDR-significant correlations onto the brain
+plot_brain_data(sig_corr_data_fdr, "Correlation_FDR_Sig_PreOp_pTau181_avgPC_overtime")
+
+```
+
+# Run linear model on avg PC and biomarkers
+```{r}
+# linear model
+#avg_fc <- rowMeans(fc_nbm_data, na.rm = TRUE)
+# linear model between avg_fc nbm and nefl (and other blood markers)
+# Make sure NEFL, patient_age, and patient_gender are in biomarker_cog_baseline
+avg_pc <- rowMeans(pc_data, na.rm = TRUE)
+
+lm_df <- data.frame(
+  avg_pc = avg_pc,
+  NEFL= biomarker_cog_baseline$NEFL,
+  MAPT = biomarker_cog_baseline$MAPT,
+  pTau231 = biomarker_cog_baseline$pTau.231,
+  pTau181 = biomarker_cog_baseline$pTau.181,
+  age = biomarker_cog_baseline$patient_age,
+  gender = as.factor(biomarker_cog_baseline$patient_gender)
+)
+# Run the linear regression
+model1 <- lm(avg_pc ~  NEFL + age + gender, data = lm_df)
+model2 <- lm(avg_pc ~  MAPT + age + gender, data = lm_df)
+model3 <- lm(avg_pc ~  pTau231 + age + gender, data = lm_df)
+model4 <- lm(avg_pc ~  pTau181 + age + gender, data = lm_df)
+model5 <- lm(avg_pc ~  pTau181*pTau231 + age + gender, data = lm_df)
+# Calculate AIC
+# Calculate AIC for each
+aic1 <- AIC(model1)
+aic2 <- AIC(model2)
+aic3 <- AIC(model3)
+aic4 <- AIC(model4)
+aic5 <- AIC(model5)
+print(aic5)
+# Compare
+aic_values <- c(model1 = aic1, model2 = aic2, model3 = aic3, model4 = aic4, model5= aic5)
+print(aic_values)
+# The model with the **lowest AIC** is preferred.
+best_model_name <- names(which.min(aic_values))
+cat("Best model by AIC:", best_model_name, "\n")
+
+# View the summary
+#summary(lm_avgfc_biomarker)
+# Print results
+print(aic_value)
+print(bic_value)
+
+
+plot_avg_fc_vs_var(avg_fc, biomarker_cog_baseline$pTau.181, biomarker_cog_baseline$bin_delirium, y_label = "Avg FC nbM", plot_title = "Relationship between Avg NBM FC and PreOp pTau181", filename = "avg_nbm_fc_vs_preopptau181.svg")
+
+model1$Pval_FDR <- p.adjust(summary(model1)$coefficients[,4], method = "fdr")
+```

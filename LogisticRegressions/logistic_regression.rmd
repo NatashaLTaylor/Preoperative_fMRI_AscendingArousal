@@ -1,0 +1,2872 @@
+---
+title: "Logistic Regression Modelling for Pre-Op Delirium"
+---
+
+```{r load libraries}
+#library(lmPerm)
+library(broom)
+library(ggplot2)
+library(ggsegSchaefer)
+```
+## Plot on the Brain Significant
+```{r}
+# Plot the significant coefficients on the brain
+plot_brain_data <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+  
+  # Create the plot
+  p1 <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    #scale_fill_gradient2(low = "#CA1C6A", mid = "white", high = "#173F6C", midpoint = 0) + #plotting the pink - blue colour scales
+    scale_fill_gradient2(low = "#C03B2B", mid = "white", high = "#0C7D79", midpoint = 0) + #plotting the red - green colour scales
+    theme_void() +
+    theme(legend.position = "bottom",
+          legend.text = element_text(size = 12),
+          legend.title = element_text(size = 14),
+          legend.key.size = unit(1.5, "cm"))+
+          labs(fill = "Beta Coefficient")  # Set the legend title
+  
+  # Print the plot
+    print(p1)
+    setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+   #setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+  ggsave(paste0(filename, ".svg"), plot = p1, width = 10, height = 10)
+}
+
+plot_brain_data_oddsratio <- function(data, filename) {
+  library(ggplot2)
+  library(ggseg)
+  library(ggsegSchaefer)
+  library(dplyr)
+  library(stringr)
+  
+  # Ensure the data has a 'label' column
+  if (!"label" %in% colnames(data)) {
+    stop("The data must contain a 'label' column.")
+  }
+  
+  # Prepare the data for plotting
+  data_plot <- data[1:400,] %>%
+    mutate(label = ifelse(str_detect(label, "_LH"), paste0("lh_", label), paste0("rh_", label)))
+  
+  # Print the data frame to verify
+  View(data_plot)
+
+ # Create the plot
+p2 <- ggplot(data_plot, aes(fill = SignificantCoefficient)) +
+    geom_brain(atlas = schaefer17_400, show.legend = TRUE) +
+    scale_fill_gradientn(
+      colors = c("#C03B2B", "white", "#0C7D79"),  # Red, White, Green
+      values = c(0.9, 0, 1),  # Map 0 to white, <1 to red, >1 to green
+      limits = c(min(data_plot$SignificantCoefficient, na.rm = TRUE), 
+                max(data_plot$SignificantCoefficient, na.rm = TRUE))  # Set limits
+    ) +
+    theme_void() +
+    theme(
+      legend.position = "bottom",
+      legend.text = element_text(size = 12),
+      legend.title = element_text(size = 14),
+      legend.key.size = unit(1.5, "cm")
+    ) +
+    labs(fill = "Log Odds Ratio")  # Set the legend title
+
+  # Print the plot
+  print(p2)
+  #this is for saving the supplementary Figs.
+  setwd('/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Manuscripts/AAS_Manuscript/Figures/Supplementary_Figs')
+  #setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+  ggsave(paste0(filename, ".svg"), plot = p2, width = 10, height = 10)
+}
+```
+
+## Function Code for Logistic Regression
+```{r}
+## Define the function
+run_glm_model <- function(subject_data, data_fc, response_var, covariates) {
+  # Ensure variable names are valid
+  names(subject_data) <- make.names(names(subject_data))
+  names(data_fc) <- make.names(names(data_fc))
+  response_var <- make.names(response_var)
+  covariates <- make.names(covariates)
+  
+  # Extract the response variable
+  response <- subject_data[[response_var]]
+  
+  # Combine the data
+  data_comb <- cbind(response, data_fc, subject_data[covariates])
+  data_model_df <- data.frame(data_comb)
+  # Define predictor variables
+  predictor_vars <- names(data_comb)[names(data_comb) != "response"]
+
+  # Define the function to run the logistic regression model with permutation
+  run_glm <- function(var, data_comb) {
+    formula <- as.formula(paste("response ~", var, "*", paste(covariates, collapse = " + ")))
+    model <- glm(formula, data = data_comb, family = binomial(link = "logit"))
+    return(model)
+  }
+  
+  results <- lapply(predictor_vars, function(var) {
+    glm <- run_glm(var, data_comb)
+    summary_model <- summary(glm)
+    marginal_effects <- predict(glm, data_comb,type = "response")
+    return(list(model = glm, summary = summary_model, marginal_effects = marginal_effects))
+  })
+  names(results) <- predictor_vars  # Assign names to the results list
+  # Extract beta coefficients and p-values
+  coef_pval_list <- lapply(results, function(res) {
+    coef_table <- summary(res$model)$coefficients
+    data.frame(
+      Variable = rownames(coef_table),
+      Beta = coef_table[, "Estimate"],
+      PValue = coef_table[, "Pr(>|z|)"],
+      OddsRatio = exp(coef_table[, "Estimate"]) # Calculate odds ratio
+    )
+  })
+  #Extract AIC Values
+    aic_list <- lapply(results, function(res) {
+      aic <- AIC(res$model)
+      return(aic)
+    })
+  names(aic_list) <- predictor_vars  # Assign names to the AIC list
+  # Combine all results into a single data frame
+  coef_pval_df <- do.call(rbind, coef_pval_list)
+  
+  return(list(results = results, coef_pval_df = coef_pval_df,data_model_df = data_model_df, aic_list = aic_list))
+}
+```
+## Simple Logistic Regression Model - loops through regions without covariates
+```{r}
+# run logistic regression for just LC FC
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+## Define the function
+run_glm_simple_model <- function(subject_data, data_fc, response_var) {
+  # Ensure variable names are valid
+  names(subject_data) <- make.names(names(subject_data))
+  names(data_fc) <- make.names(names(data_fc))
+  response_var <- make.names(response_var)
+  
+  # Extract the response variable
+  response <- subject_data[[response_var]]
+  
+  # Combine the data
+  data_comb <- cbind(response, data_fc)
+  data_model_df <- data.frame(data_comb)
+  # Define predictor variables
+  predictor_vars <- names(data_comb)[names(data_comb) != "response"]
+
+  # Define the function to run the logistic regression model with permutation
+  run_glm <- function(var, data_comb) {
+    formula <- as.formula(paste("response ~", var))
+    model <- glm(formula, data = data_comb, family = binomial(link = "logit"))
+    return(model)
+  }
+  
+  results <- lapply(predictor_vars, function(var) {
+    glm <- run_glm(var, data_comb)
+    summary_model <- summary(glm)
+    marginal_effects <- predict(glm, data_comb, type = "response")
+    return(list(model = glm, summary = summary_model, marginal_effects = marginal_effects)) # nolint
+  })
+  names(results) <- predictor_vars  # Assign names to the results list
+  # Extract beta coefficients and p-values
+  coef_pval_list <- lapply(results, function(res) {
+    coef_table <- summary(res$model)$coefficients
+    data.frame(
+      Variable = rownames(coef_table),
+      Beta = coef_table[, "Estimate"],
+      PValue = coef_table[, "Pr(>|z|)"],
+      OddsRatio = exp(coef_table[, "Estimate"]) # Calculate odds ratio
+    )
+  })
+  
+  # Combine all results into a single data frame
+  coef_pval_df <- do.call(rbind, coef_pval_list)
+  #print of AIC for each variable too
+  aic_list <- lapply(results, function(res) {
+    aic <- AIC(res$model)
+    return(aic)
+  })
+
+  return(list(results = results, coef_pval_df = coef_pval_df,data_model_df = data_model_df, aic_list = aic_list))
+}
+```
+## Logistic Regression Model with Covariate as + not an interaction term
+```{r}
+## Define the function
+run_glm_model2 <- function(subject_data, data_fc, response_var, covariates) {
+  # Ensure variable names are valid
+  names(subject_data) <- make.names(names(subject_data))
+  names(data_fc) <- make.names(names(data_fc))
+  response_var <- make.names(response_var)
+  covariates <- make.names(covariates)
+  
+  # Extract the response variable
+  response <- subject_data[[response_var]]
+  
+  # Combine the data
+  data_comb <- cbind(response, data_fc, subject_data[covariates])
+  data_model_df <- data.frame(data_comb)
+  # Define predictor variables
+  predictor_vars <- names(data_comb)[names(data_comb) != "response"]
+
+  # Define the function to run the logistic regression model with permutation
+  run_glm <- function(var, data_comb) {
+    formula <- as.formula(paste("response ~", var, "+", paste(covariates, collapse = " + ")))
+    model <- glm(formula, data = data_comb, family = binomial(link = "logit"))
+    return(model)
+  }
+  
+  results <- lapply(predictor_vars, function(var) {
+    glm <- run_glm(var, data_comb)
+    summary_model <- summary(glm)
+    marginal_effects <- predict(glm, data_comb,type = "response")
+    return(list(model = glm, summary = summary_model, marginal_effects = marginal_effects))
+  })
+  names(results) <- predictor_vars  # Assign names to the results list
+  # Extract beta coefficients and p-values
+  coef_pval_list <- lapply(results, function(res) {
+    coef_table <- summary(res$model)$coefficients
+    data.frame(
+      Variable = rownames(coef_table),
+      Beta = coef_table[, "Estimate"],
+      PValue = coef_table[, "Pr(>|z|)"],
+      OddsRatio = exp(coef_table[, "Estimate"]) # Calculate odds ratio
+    )
+  })
+  #Extract AIC Values
+    aic_list <- lapply(results, function(res) {
+      aic <- AIC(res$model)
+      return(aic)
+    })
+  names(aic_list) <- predictor_vars  # Assign names to the AIC list
+  # Combine all results into a single data frame
+  coef_pval_df <- do.call(rbind, coef_pval_list)
+  
+  return(list(results = results, coef_pval_df = coef_pval_df,data_model_df = data_model_df, aic_list = aic_list))
+}
+```
+## Load the data and covariates
+```{r load_data}
+## Load in the data
+#pc_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/avg_pc_all_subs.csv", header = FALSE)
+pc_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/csf_regress_redo/avg_pc_all_subs.csv", header = FALSE)
+#whole brain avg. pc for each subject
+avg_pc <- rowMeans(pc_data, na.rm = TRUE)
+# Convert avg_pc to a data frame
+avg_pc <- data.frame(avg_pc)
+## Clinical Data
+subject_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/subject_data_IL810_mri.csv", header=TRUE)
+subject_data <- subject_data[-88,] #need to remove sub-164 as it is not in the pc data
+# cog data 
+cog_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/mri_scanner_cog.csv")
+cog_data <- cog_data[-88,]
+#load in the ROI names
+roi_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/code/schaef_400roi_names.csv", header = FALSE)
+#rename colum names in pc_data with roi_names
+colnames(pc_data) <- roi_names$V1
+## oz delta data
+oz_delta_orig <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/Oz_deltapower.csv")
+# Remove "_" in subject names
+oz_delta_orig$Sub <- gsub("_", "", oz_delta_orig$Sub)
+# Filter for MRI subjects
+oz_delta <- oz_delta_orig[oz_delta_orig$Sub %in% subject_data$patientid, ]
+# Merge oz_delta with subject_data based on patientid
+subject_data_ozdelta <- merge(subject_data, oz_delta, by.x = "patientid", by.y = "Sub", all.x = TRUE)
+```
+
+## Run Log Reg for each ROI (PC) * Diff_OzDeltaPow
+```{r}
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+covariates <- c("Diff_OzDeltaPow")
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_ozdelta_pc <- run_glm_model(subject_data_ozdelta, pc_data, response_var, covariates) # nolint
+data_model_df = glm_model_ozdelta_pc$data_model_df #that's the actual data that went into the model
+View(glm_model_ozdelta_pc$coef_pval_df)
+
+# Extract the interactions between ROI and covariates
+interactions <- glm_model_ozdelta_pc$coef_pval_df[grep(":", glm_model_ozdelta_pc$coef_pval_df$Variable), ]
+View(interactions)
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+# FDR correction for multiple comparisons
+interactions$FDR_PValue <- p.adjust(interactions$PValue, method = "fdr")
+# Add a column to indicate FDR-significant coefficients
+interactions$SignificantCoefficient_FDR <- ifelse(interactions$FDR_PValue < 0.05, interactions$Beta, 0)
+
+# Extract significant interactions after FDR correction
+sig_interactions <- interactions[interactions$FDR_PValue < 0.05, ]
+View(sig_interactions)
+```
+```{r}
+## Plotting the figures
+# Get the significant odds ratio
+interactions$sig_OddsRatio <- ifelse(interactions$PValue < 0.05, interactions$OddsRatio, 0)
+data <- data.frame(label = interactions$label, SignificantCoefficient = interactions$sig_OddsRatio)
+
+plot_brain_data_oddsratio(data, "PC_ROI_ozdeltapower_sigodds")
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+
+plot_brain_data(data2, "PC_ROI_ozdeltapower_sigcoeffs")
+# Use the actual data that went into the model, ensuring variable names match
+```
+
+## Need to run model fit for each variable to predict delirium outcome
+Iterate through each variable & determine the best model for fit- comparison with AIC
+```{r}
+response_var <- "bin_delirium"
+# Model 1: bin delirium ~ PC only
+model1 <- run_glm_simple_model(subject_data,pc_data,response_var)
+# Model 2: bin delirium ~ Diff_OzDeltaPow only
+model2 <- glm(bin_delirium ~ Diff_OzDeltaPow, data=subject_data_ozdelta,family=binomial(link="logit")) # nolint
+# model with the interaction
+covariates <- c("Diff_OzDeltaPow")
+# Model 3: bin delirium ~ PC * Diff_OzDeltaPow
+model3 <- run_glm_model(subject_data_ozdelta, pc_data, response_var, covariates) # nolint
+# Model 4: bin delirium ~ PC + Diff_OzDeltaPow
+model4 <- run_glm_model2(subject_data_ozdelta, pc_data, response_var, covariates) # nolint
+
+
+# Extract AIC values for each predictor in model1
+aic_model1 <- sapply(model1$results, function(res) AIC(res$model))
+# Extract AIC values for each predictor in model3
+aic_model3 <- sapply(model3$results, function(res) AIC(res$model))
+aic_model4 <- sapply(model4$results, function(res) AIC(res$model))
+# Extract AIC value for model2
+aic_model2 <- AIC(model2)
+
+# Combine AIC values into a data frame
+# Combine all predictors and models into a single vector of equal length
+predictor_names <- c(names(aic_model1), "Diff_OzDeltaPow", names(aic_model3), names(aic_model4))
+model_names <- c(
+  rep("Model 1", length(aic_model1)),
+  "Model 2",
+  rep("Model 3", length(aic_model3)),
+  rep("Model 4", length(aic_model4))
+)
+aic_values <- c(aic_model1, aic_model2, aic_model3, aic_model4)
+
+# Ensure all vectors are the same length
+stopifnot(length(predictor_names) == length(model_names), length(model_names) == length(aic_values))
+
+aic_comparison <- data.frame(
+  Predictor = predictor_names,
+  Model = model_names,
+  AIC = aic_values
+)
+
+
+
+    # Identify the best model based on the lowest AIC
+    best_model <- aic_comparison[which.min(aic_comparison$AIC), ]
+
+    # Print the best model
+    print(paste("The best model for", best_model$Model ,"is for variable:", best_model$Predictor, "with AIC:", best_model$AIC))
+
+
+        # Plot the AIC comparisons with color based on the model
+        library(ggplot2)
+        aic_plot <-ggplot(aic_comparison, aes(x = reorder(Predictor,AIC), y = AIC, color = Model)) +
+          geom_point(size = 3) +
+          coord_flip() +
+          labs(title = "AIC Comparison Across Models",
+               x = "Predictor",
+               y = "AIC",
+               color = "Model") +
+          theme_minimal() +
+          theme(axis.text.x = element_text(angle = 90, hjust = 1))
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+  filename="AIC_comparison_PC_ROI_delirium_severity"
+  ggsave(paste0(filename, ".png"),plot=aic_plot, width = 10, height = 10)
+
+# Filter predictors in model 3 where AIC is less than model 2
+predictors_better_than_model2 <- names(aic_model3[aic_model3 < aic_model2])
+
+# Print the predictors
+print(predictors_better_than_model2)
+```
+# AIC model summary for all models
+```{r}
+# =============================================================================
+# COMPREHENSIVE AIC ANALYSIS FOR ALL MODELS
+# =============================================================================
+
+# Extract AIC values for all models
+# Model 1: PC only
+aic_model1 <- sapply(model1$results, function(res) AIC(res$model))
+
+# Model 2: OzDelta only  
+aic_model2 <- AIC(model2)
+
+# Model 3: PC * OzDelta (additive)
+aic_model3 <- sapply(model3$results, function(res) AIC(res$model))
+
+# Model 4: PC + OzDelta (interaction)
+aic_model4 <- sapply(model4$results, function(res) AIC(res$model))
+
+# =============================================================================
+# INDIVIDUAL MODEL SUMMARIES
+# =============================================================================
+
+cat("=== MODEL 1 (PC ONLY) SUMMARY ===\n")
+model1_summary <- list(
+  n_models = length(aic_model1),
+  best_aic = min(aic_model1),
+  worst_aic = max(aic_model1),
+  mean_aic = mean(aic_model1),
+  median_aic = median(aic_model1),
+  sd_aic = sd(aic_model1),
+  best_model = names(which.min(aic_model1))
+)
+print(model1_summary)
+
+cat("\n=== MODEL 2 (OZDELTA ONLY) SUMMARY ===\n")
+cat("AIC:", aic_model2, "\n")
+
+cat("\n=== MODEL 3 (PC + OZDELTA ADDITIVE) SUMMARY ===\n")
+model3_summary <- list(
+  n_models = length(aic_model3),
+  best_aic = min(aic_model3),
+  worst_aic = max(aic_model3),
+  mean_aic = mean(aic_model3),
+  median_aic = median(aic_model3),
+  sd_aic = sd(aic_model3),
+  best_model = names(which.min(aic_model3))
+)
+print(model3_summary)
+
+cat("\n=== MODEL 4 (PC * OZDELTA INTERACTION) SUMMARY ===\n")
+model4_summary <- list(
+  n_models = length(aic_model4),
+  best_aic = min(aic_model4),
+  worst_aic = max(aic_model4),
+  mean_aic = mean(aic_model4),
+  median_aic = median(aic_model4),
+  sd_aic = sd(aic_model4),
+  best_model = names(which.min(aic_model4))
+)
+print(model4_summary)
+
+# =============================================================================
+# DETAILED MODEL COMPARISONS
+# =============================================================================
+
+# Create comprehensive comparison table
+create_model_comparison <- function() {
+  # Get representative AIC for each model type
+  model1_best <- min(aic_model1)
+  model1_best_name <- names(which.min(aic_model1))
+  
+  model3_best <- min(aic_model3)
+  model3_best_name <- names(which.min(aic_model3))
+  
+  model4_best <- min(aic_model4)
+  model4_best_name <- names(which.min(aic_model4))
+  
+  # Create comparison data frame
+  comparison_df <- data.frame(
+    Model_Type = c("Model 1 (PC only)", 
+                   "Model 2 (OzDelta only)", 
+                   "Model 3 (PC + OzDelta)", 
+                   "Model 4 (PC * OzDelta)"),
+    Best_Predictor = c(model1_best_name, 
+                       "Diff_OzDeltaPow", 
+                       model3_best_name, 
+                       model4_best_name),
+    Best_AIC = c(model1_best, 
+                 aic_model2, 
+                 model3_best, 
+                 model4_best),
+    N_Models_Tested = c(length(aic_model1), 
+                        1, 
+                        length(aic_model3), 
+                        length(aic_model4)),
+    stringsAsFactors = FALSE
+  )
+  
+  # Add delta AIC and rankings
+  comparison_df$Delta_AIC <- comparison_df$Best_AIC - min(comparison_df$Best_AIC)
+  comparison_df$Rank <- rank(comparison_df$Best_AIC)
+  
+  # Add AIC weights
+  comparison_df$AIC_Weight <- exp(-0.5 * comparison_df$Delta_AIC) / 
+                             sum(exp(-0.5 * comparison_df$Delta_AIC))
+  
+  # Sort by AIC
+  comparison_df <- comparison_df[order(comparison_df$Best_AIC), ]
+  
+  return(comparison_df)
+}
+
+cat("\n=== OVERALL MODEL COMPARISON ===\n")
+overall_comparison <- create_model_comparison()
+print(overall_comparison)
+
+# =============================================================================
+# STATISTICAL SIGNIFICANCE OF DIFFERENCES
+# =============================================================================
+
+cat("\n=== MODEL COMPARISON ANALYSIS ===\n")
+
+# Find overall best model
+best_overall <- overall_comparison[1, ]
+cat("BEST OVERALL MODEL:\n")
+cat("Type:", best_overall$Model_Type, "\n")
+cat("Predictor:", best_overall$Best_Predictor, "\n")
+cat("AIC:", round(best_overall$Best_AIC, 2), "\n")
+
+# Models with substantial support (Delta AIC < 2)
+competitive_models <- overall_comparison[overall_comparison$Delta_AIC < 2, ]
+cat("\nCOMPETITIVE MODELS (ΔAICc < 2):\n")
+if(nrow(competitive_models) > 1) {
+  print(competitive_models[, c("Model_Type", "Best_Predictor", "Best_AIC", "Delta_AIC")])
+} else {
+  cat("Only one model has substantial support\n")
+}
+
+# Models with some support (Delta AIC < 7)
+some_support <- overall_comparison[overall_comparison$Delta_AIC < 7, ]
+cat("\nMODELS WITH SOME SUPPORT (ΔAICc < 7):\n")
+print(some_support[, c("Model_Type", "Best_Predictor", "Best_AIC", "Delta_AIC")])
+
+# =============================================================================
+# DETAILED BREAKDOWN BY MODEL TYPE
+# =============================================================================
+
+cat("\n=== DETAILED BREAKDOWN ===\n")
+
+# Top 3 models from each category
+cat("TOP 3 MODELS FROM EACH CATEGORY:\n\n")
+
+# Model 1 top 3
+cat("Model 1 (PC only) - Top 3:\n")
+model1_top3 <- head(sort(aic_model1), 3)
+for(i in 1:length(model1_top3)) {
+  cat(sprintf("%d. %s: AIC = %.2f\n", i, names(model1_top3)[i], model1_top3[i]))
+}
+
+cat("\nModel 2 (OzDelta only):\n")
+cat(sprintf("1. Diff_OzDeltaPow: AIC = %.2f\n", aic_model2))
+
+# Model 3 top 3
+cat("\nModel 3 (PC + OzDelta) - Top 3:\n")
+model3_top3 <- head(sort(aic_model3), 3)
+for(i in 1:length(model3_top3)) {
+  cat(sprintf("%d. %s: AIC = %.2f\n", i, names(model3_top3)[i], model3_top3[i]))
+}
+
+# Model 4 top 3
+cat("\nModel 4 (PC * OzDelta) - Top 3:\n")
+model4_top3 <- head(sort(aic_model4), 3)
+for(i in 1:length(model4_top3)) {
+  cat(sprintf("%d. %s: AIC = %.2f\n", i, names(model4_top3)[i], model4_top3[i]))
+}
+
+# =============================================================================
+# SUMMARY STATISTICS TABLE
+# =============================================================================
+
+cat("\n=== SUMMARY STATISTICS BY MODEL TYPE ===\n")
+summary_stats <- data.frame(
+  Model_Type = c("Model 1", "Model 2", "Model 3", "Model 4"),
+  N_Models = c(length(aic_model1), 1, length(aic_model3), length(aic_model4)),
+  Best_AIC = c(min(aic_model1), aic_model2, min(aic_model3), min(aic_model4)),
+  Mean_AIC = c(mean(aic_model1), aic_model2, mean(aic_model3), mean(aic_model4)),
+  SD_AIC = c(sd(aic_model1), 0, sd(aic_model3), sd(aic_model4)),
+  Range_AIC = c(diff(range(aic_model1)), 0, diff(range(aic_model3)), diff(range(aic_model4)))
+)
+
+summary_stats$Best_AIC <- round(summary_stats$Best_AIC, 2)
+summary_stats$Mean_AIC <- round(summary_stats$Mean_AIC, 2)
+summary_stats$SD_AIC <- round(summary_stats$SD_AIC, 2)
+summary_stats$Range_AIC <- round(summary_stats$Range_AIC, 2)
+
+print(summary_stats)
+
+# =============================================================================
+# FINAL RECOMMENDATIONS
+# =============================================================================
+
+cat("\n=== FINAL RECOMMENDATIONS ===\n")
+
+delta_threshold_strong <- 2
+delta_threshold_weak <- 7
+
+if(min(overall_comparison$Delta_AIC[-1]) > delta_threshold_strong) {
+  cat("STRONG EVIDENCE: The best model has strong support (all other models ΔAICc > 2)\n")
+} else if(min(overall_comparison$Delta_AIC[-1]) > delta_threshold_weak) {
+  cat("MODERATE EVIDENCE: The best model has moderate support\n")
+} else {
+  cat("WEAK EVIDENCE: Multiple models have similar support - consider model averaging\n")
+}
+
+cat("\nRecommended model for further analysis:\n")
+cat("Type:", best_overall$Model_Type, "\n")
+cat("Predictor:", best_overall$Best_Predictor, "\n")
+cat("AIC:", round(best_overall$Best_AIC, 2), "\n")
+cat("Evidence ratio vs second best:", round(exp(0.5 * overall_comparison$Delta_AIC[2]), 1), ":1\n")
+
+```
+## Model comparison across ROIs
+```{r}
+# =============================================================================
+# CORRECT AIC ANALYSIS - COMPARING MODELS WITHIN EACH ROI (NO MODEL 2)
+# =============================================================================
+
+# Load required library
+library(dplyr)
+
+# Function to compare models for a single ROI
+compare_models_for_roi <- function(roi_name) {
+  
+  # Check if ROI exists in all model results
+  if(!roi_name %in% names(model1$results) || 
+     !roi_name %in% names(model3$results) || 
+     !roi_name %in% names(model4$results)) {
+    return(NULL)
+  }
+  
+  # Extract models for this specific ROI
+  model1_roi <- model1$results[[roi_name]]$model  # PC only
+  model3_roi <- model3$results[[roi_name]]$model  # PC * OzDelta  
+  model4_roi <- model4$results[[roi_name]]$model  # PC + OzDelta
+  
+  # Create comparison for this ROI (excluding Model 2)
+  roi_comparison <- data.frame(
+    ROI = roi_name,
+    Model_Type = c("Model 1 (PC only)", 
+                   "Model 3 (PC * OzDelta)", 
+                   "Model 4 (PC + OzDelta)"),
+    AIC = c(AIC(model1_roi), 
+            AIC(model3_roi), 
+            AIC(model4_roi)),
+    stringsAsFactors = FALSE
+  )
+  
+  # Add delta AIC and rankings within this ROI
+  roi_comparison$Delta_AIC <- roi_comparison$AIC - min(roi_comparison$AIC)
+  roi_comparison$Rank <- rank(roi_comparison$AIC)
+  roi_comparison$AIC_Weight <- exp(-0.5 * roi_comparison$Delta_AIC) / 
+                               sum(exp(-0.5 * roi_comparison$Delta_AIC))
+  
+  # Sort by AIC
+  roi_comparison <- roi_comparison[order(roi_comparison$AIC), ]
+  
+  return(roi_comparison)
+}
+
+# =============================================================================
+# ANALYSIS FOR EACH ROI
+# =============================================================================
+
+# Get ROI names that exist in all models
+roi_names <- intersect(intersect(names(model1$results), names(model3$results)), 
+                       names(model4$results))
+
+cat("Analyzing", length(roi_names), "ROIs\n")
+
+# Compare models for each ROI
+all_roi_comparisons <- list()
+for(roi in roi_names) {
+  result <- compare_models_for_roi(roi)
+  if(!is.null(result)) {
+    all_roi_comparisons[[roi]] <- result
+  }
+}
+
+# Combine all comparisons
+combined_comparisons <- do.call(rbind, all_roi_comparisons)
+
+cat("=== MODEL COMPARISON WITHIN EACH ROI ===\n")
+
+# Summary: Which model wins most often?
+best_models <- combined_comparisons[combined_comparisons$Rank == 1, ]
+model_wins <- table(best_models$Model_Type)
+cat("Model wins across all ROIs:\n")
+print(model_wins)
+cat("\n")
+
+# Show best model for each ROI
+cat("BEST MODEL FOR EACH ROI (first 10):\n")
+best_by_roi <- combined_comparisons[combined_comparisons$Rank == 1, 
+                                   c("ROI", "Model_Type", "AIC", "Delta_AIC")]
+print(head(best_by_roi, 10))
+
+# =============================================================================
+# SUMMARY STATISTICS BY MODEL TYPE
+# =============================================================================
+
+cat("\n=== SUMMARY STATISTICS ACROSS ROIS ===\n")
+
+# Calculate summary statistics manually
+model_types <- unique(combined_comparisons$Model_Type)
+summary_stats <- data.frame()
+
+for(model_type in model_types) {
+  model_data <- combined_comparisons[combined_comparisons$Model_Type == model_type, ]
+  
+  stats <- data.frame(
+    Model_Type = model_type,
+    N_ROIs = nrow(model_data),
+    Times_Best = sum(model_data$Rank == 1),
+    Mean_AIC = round(mean(model_data$AIC), 2),
+    SD_AIC = round(sd(model_data$AIC), 2),
+    Mean_Delta_AIC = round(mean(model_data$Delta_AIC), 2),
+    Mean_Weight = round(mean(model_data$AIC_Weight), 3),
+    stringsAsFactors = FALSE
+  )
+  
+  summary_stats <- rbind(summary_stats, stats)
+}
+
+# Sort by times best, then by mean delta AIC
+summary_stats <- summary_stats[order(-summary_stats$Times_Best, summary_stats$Mean_Delta_AIC), ]
+print(summary_stats)
+
+# =============================================================================
+# TOP PERFORMING ROIS WITH DETAILED AIC DIFFERENCES
+# =============================================================================
+
+cat("\n=== TOP 5 BEST PERFORMING ROIS WITH AIC DIFFERENCES ===\n")
+
+# Find best AIC for each ROI
+best_aic_by_roi <- aggregate(AIC ~ ROI, data = combined_comparisons, FUN = min)
+best_aic_by_roi <- best_aic_by_roi[order(best_aic_by_roi$AIC), ]
+top5_rois <- head(best_aic_by_roi, 5)
+
+for(i in 1:nrow(top5_rois)) {
+  roi <- top5_rois$ROI[i]
+  roi_details <- all_roi_comparisons[[roi]]
+  
+  cat(sprintf("\n%d. %s (Best AIC: %.2f)\n", i, roi, top5_rois$AIC[i]))
+  
+  # Extract AIC values for each model
+  model1_aic <- roi_details$AIC[roi_details$Model_Type == "Model 1 (PC only)"]
+  model3_aic <- roi_details$AIC[roi_details$Model_Type == "Model 3 (PC + OzDelta)"]
+  model4_aic <- roi_details$AIC[roi_details$Model_Type == "Model 4 (PC * OzDelta)"]
+  
+  # Print model details with rankings
+  print(roi_details[, c("Model_Type", "AIC", "Delta_AIC", "Rank")])
+  
+  # Calculate and print pairwise AIC differences
+  cat("\nPairwise AIC Differences:\n")
+  cat(sprintf("Model 3 vs Model 1: %.2f (", model1_aic - model3_aic))
+  if(model1_aic - model3_aic > 2) {
+    cat("Model 3 significantly better)\n")
+  } else if(model3_aic - model1_aic > 2) {
+    cat("Model 1 significantly better)\n")
+  } else {
+    cat("No strong preference)\n")
+  }
+  
+  cat(sprintf("Model 4 vs Model 1: %.2f (", model1_aic - model4_aic))
+  if(model1_aic - model4_aic > 2) {
+    cat("Model 4 significantly better)\n")
+  } else if(model4_aic - model1_aic > 2) {
+    cat("Model 1 significantly better)\n")
+  } else {
+    cat("No strong preference)\n")
+  }
+  
+  cat(sprintf("Model 4 vs Model 3: %.2f (", model3_aic - model4_aic))
+  if(model3_aic - model4_aic > 2) {
+    cat("Model 4 significantly better)\n")
+  } else if(model4_aic - model3_aic > 2) {
+    cat("Model 3 significantly better)\n")
+  } else {
+    cat("No strong preference)\n")
+  }
+  
+  # Summary interpretation
+  best_model <- roi_details$Model_Type[roi_details$Rank == 1]
+  cat(sprintf("\nSummary: %s is best for %s\n", best_model, roi))
+  
+  # Evidence strength
+  min_delta <- min(roi_details$Delta_AIC[roi_details$Rank > 1])
+  if(min_delta > 10) {
+    cat("Evidence: Very strong support for best model\n")
+  } else if(min_delta > 4) {
+    cat("Evidence: Strong support for best model\n")
+  } else if(min_delta > 2) {
+    cat("Evidence: Moderate support for best model\n")
+  } else {
+    cat("Evidence: Weak support - multiple models competitive\n")
+  }
+  
+  cat(rep("-", 60), "\n")
+}
+
+# =============================================================================
+# SUMMARY TABLE OF AIC DIFFERENCES FOR TOP ROIS
+# =============================================================================
+
+cat("\n=== SUMMARY TABLE: AIC DIFFERENCES FOR TOP 5 ROIS ===\n")
+
+# Create summary table
+top_roi_summary <- data.frame()
+
+for(i in 1:nrow(top5_rois)) {
+  roi <- top5_rois$ROI[i]
+  roi_details <- all_roi_comparisons[[roi]]
+  
+  # Extract AIC values
+  model1_aic <- roi_details$AIC[roi_details$Model_Type == "Model 1 (PC only)"]
+  model3_aic <- roi_details$AIC[roi_details$Model_Type == "Model 3 (PC + OzDelta)"]
+  model4_aic <- roi_details$AIC[roi_details$Model_Type == "Model 4 (PC * OzDelta)"]
+  
+  # Best model
+  best_model <- roi_details$Model_Type[roi_details$Rank == 1]
+  best_aic <- min(roi_details$AIC)
+  
+  # Create summary row
+  summary_row <- data.frame(
+    Rank = i,
+    ROI = roi,
+    Best_Model = best_model,
+    Best_AIC = round(best_aic, 2),
+    Model1_AIC = round(model1_aic, 2),
+    Model3_AIC = round(model3_aic, 2),
+    Model4_AIC = round(model4_aic, 2),
+    Diff_M3_vs_M1 = round(model1_aic - model3_aic, 2),
+    Diff_M4_vs_M1 = round(model1_aic - model4_aic, 2),
+    Diff_M4_vs_M3 = round(model3_aic - model4_aic, 2),
+    stringsAsFactors = FALSE
+  )
+  
+  top_roi_summary <- rbind(top_roi_summary, summary_row)
+}
+
+print(top_roi_summary)
+
+# =============================================================================
+# INTERPRETATION OF DIFFERENCES
+# =============================================================================
+
+cat("\n=== INTERPRETATION GUIDE ===\n")
+cat("AIC Difference Interpretation:\n")
+cat("• Δ > 10: Very strong evidence against higher AIC model\n")
+cat("• Δ > 4:  Strong evidence against higher AIC model\n")
+cat("• Δ > 2:  Moderate evidence against higher AIC model\n")
+cat("• Δ ≤ 2:  Weak evidence - models are competitive\n")
+
+cat("\nColumn explanations:\n")
+cat("• Diff_M3_vs_M1: Positive = Model 3 better, Negative = Model 1 better\n")
+cat("• Diff_M4_vs_M1: Positive = Model 4 better, Negative = Model 1 better\n")
+cat("• Diff_M4_vs_M3: Positive = Model 4 better, Negative = Model 3 better\n")
+
+# Count significant improvements in top ROIs
+cat("\n=== SIGNIFICANT IMPROVEMENTS IN TOP 5 ROIS ===\n")
+cat("Model 3 significantly better than Model 1:", 
+    sum(top_roi_summary$Diff_M3_vs_M1 > 2), "out of 5 ROIs\n")
+cat("Model 4 significantly better than Model 1:", 
+    sum(top_roi_summary$Diff_M4_vs_M1 > 2), "out of 5 ROIs\n")
+cat("Model 4 significantly better than Model 3:", 
+    sum(top_roi_summary$Diff_M4_vs_M3 > 2), "out of 5 ROIs\n")
+```
+
+## 
+# Calculate the difference in slope of the relationship between PC and delirium when holding SWA at its 1st quartile vs. 3rd quartile value 
+marginaleffects::slopes(model, variables = "PC", newdata = datagrid(SWA = iqr), hypothesis = "b2 - b1 = 0")
+```{r}
+response_var <- "bin_delirium"
+covariates <- c("Diff_OzDeltaPow")
+# Model 3: bin delirium ~ PC * Diff_OzDeltaPow
+model3 <- run_glm_model(subject_data_ozdelta, pc_data, response_var, covariates) # nolint
+# Model 4: bin delirium ~ PC + Diff_OzDeltaPow
+model4 <- run_glm_model2(subject_data_ozdelta, pc_data, response_var, covariates) # nolint
+
+# Version 1: Show slopes of PC variable at different OzDelta levels
+marginaleffects::plot_slopes(
+  model3$results$X17Networks_RH_DefaultB_PFCd_2$model,
+  variables = "X17Networks_RH_DefaultB_PFCd_2",
+  condition = "Diff_OzDeltaPow"
+) +
+  geom_hline(yintercept = 0, linetype = "dotted")
+
+# Version 2: Show slopes of OzDelta at different PC levels
+marginaleffects::plot_slopes(
+  model3$results$X17Networks_RH_DefaultB_PFCd_2$model,
+  variables = "Diff_OzDeltaPow",
+  condition = "X17Networks_RH_DefaultB_PFCd_2"
+) +
+  geom_hline(yintercept = 0, linetype = "dotted")
+
+
+# This will show only the difference test result
+marginaleffects::slopes(
+  model3$results$X17Networks_RH_DefaultB_PFCd_2$model,
+  variables = "X17Networks_RH_DefaultB_PFCd_2",
+  hypothesis = "b2 - b1 = 0",
+  condition = list(
+    Diff_OzDeltaPow = quantile(subject_data_ozdelta$Diff_OzDeltaPow, 
+                               probs = c(0.25, 0.75), na.rm = TRUE)
+  )
+)
+# alternative approach to determine the differences
+marginaleffects::hypotheses(
+  model3$results$X17Networks_RH_ContB_IPL_4$model,
+  variables = "X17Networks_RH_ContB_IPL_4",
+  hypothesis = "b2 - b1 = 0",
+  condition = list(
+    Diff_OzDeltaPow = quantile(subject_data_ozdelta$Diff_OzDeltaPow, 
+                               probs = c(0.25, 0.75), na.rm = TRUE)
+  )
+)
+
+# display the model effect of changing diff in OZ Delta on relationship between PC and delirium
+
+## plotting the slope of the relationship between PC and delirium at different levels of SWA
+m1 <-marginaleffects::plot_slopes(
+  model3$results$X17Networks_RH_DefaultB_PFCd_2$model,
+  variables = "X17Networks_RH_DefaultB_PFCd_2",
+  condition = "Diff_OzDeltaPow"
+) +
+  geom_hline(yintercept = 0, linetype = "dotted", color = "#6292c0") +
+  theme_minimal() +
+  theme(
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  )
+  print(m1)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="Slope_PC_DefaultBPFCd2_DiffOzDelta"
+  ggsave(paste0(filename, ".svg"),plot=m1, width = 10, height = 10)
+
+```
+
+
+Now that we've determined appropriate model fits with the AIC values
+## Look at the marginal effects of the logistic regression model
+rational is to convert the log ratio into a probability using
+Marginalise and convert to probability scale
+#results <- predict(model, newdata= dat, response = "response")
+```{r}
+# Extract the marginal effects
+marginal_effects <- lapply(model3$results, function(res) {
+  model <- res$model
+  #marginalise and converts the log-odds into probabilities
+  marginal_effects <- predict(model, type = "response")
+  return(marginal_effects)
+})
+# this appears to be creating a probability distribution for each ROI?
+View(marginal_effects)
+marginal_effects_df <- as.data.frame(do.call(cbind, marginal_effects))
+# Add column names (if not already present)
+colnames(marginal_effects_df) <- names(marginal_effects)
+
+prob <- marginal_effects$X17Networks_RH_DefaultB_PFCd_2
+data_model_noNA <- na.omit(data_model_df) # 76 x 503 - this is the actual data the model was ran on
+
+model <- model3$results$X17Networks_RH_DefaultB_PFCd_2$model
+# Create an interaction plot
+library(interactions)
+# Get the model
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- model3$results[[model_name]]$model
+
+# Create interaction plot with continuous moderator (no grouping)
+i <- interact_plot(model,
+  pred = "X17Networks_RH_DefaultB_PFCd_2",          # Predictor variable
+  modx = "Diff_OzDeltaPow",                         # Moderator variable (continuous)
+  #modx.values = NULL,                     # Use quartiles for moderator
+  modx.values = "plus-minus",                       # Use actual values, not groups
+  plot.points = TRUE,                               # Plot raw data points
+  x.label = "PC", 
+  y.label = "Predicted Probability",
+  #colors = c("#1f77b4")                            # Single color since no grouping
+) +
+theme_minimal() +
+theme(
+  panel.grid.minor = element_blank(),
+  axis.text.x = element_text(size = 14),
+  axis.text.y = element_text(size = 14),
+  axis.title.x = element_text(size = 16),
+  axis.title.y = element_text(size = 16),
+  legend.text = element_text(size = 12),
+  legend.title = element_text(size = 14)
+)
+
+print(i)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="Interaction Relationship"
+  ggsave(paste0(filename, ".svg"),plot=i, width = 10, height = 10)
+
+
+# Get the exact variable names
+roi_name <- sig_interactions$label[1]
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+
+# Find the PC variable name
+pc_var <- names(model$model)[grep("^X", names(model$model))][1]
+
+# Use the exact variable name
+i <- interact_plot(model,
+  pred = "X17Networks_RH_DefaultB_PFCd_2",                    # Use exact variable name
+  modx = "Diff_OzDeltaPow",
+  modx.values = "NULL", 
+  plot.points = TRUE,
+x.label = "PC",
+y.label = "Predicted Probability",
+colors = c("#7fb6cc","#1f77b4", "#f9a340")
+) +
+theme_minimal() +
+theme(
+  #panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),      # X-axis text size
+  axis.text.y = element_text(size = 14),      # Y-axis text size
+  axis.title.x = element_text(size = 16),     # X-axis title size
+  axis.title.y = element_text(size = 16),     # Y-axis title size
+  legend.text = element_text(size = 12),      # Legend text size
+  legend.title = element_text(size = 14)  
+)
+
+print(i)
+
+```
+
+## Custom Interaction Plot - Fitted Model Curves Over Data
+```{r}
+plot_simple_logistic <- function(model_results, roi_name, data_df) {
+  library(ggplot2)
+  library(dplyr)
+  
+  # Get the specific model for the ROI
+  model_name <- paste0("X", roi_name)
+  model <- model_results$results[[model_name]]$model
+  model_data <- model$model
+  
+  # Find the PC variable name
+  pc_var <- names(model_data)[grep("^X", names(model_data))][1]
+  
+  # Create range for PC values
+  pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                  max(model_data[[pc_var]], na.rm = TRUE),
+                  length.out = 100)
+  
+  # Create prediction data using all combinations of PC range and actual Oz Delta values
+  pred_data_list <- list()
+  for(i in 1:nrow(model_data)) {
+    temp_data <- data.frame(
+      PC = pc_range,
+      Diff_OzDeltaPow = model_data$Diff_OzDeltaPow[i]
+    )
+    names(temp_data) <- c(pc_var, "Diff_OzDeltaPow")
+    temp_data$predicted_prob <- predict(model, newdata = temp_data, type = "response")
+    temp_data$subject_id <- i
+    pred_data_list[[i]] <- temp_data
+  }
+  
+  # Combine all prediction data
+  pred_data <- do.call(rbind, pred_data_list)
+  
+  # Create the plot
+  curve_plot <- ggplot() +
+    # Add prediction curves for each subject (with transparency)
+    geom_line(data = pred_data, 
+             aes_string(x = pc_var, y = "predicted_prob", group = "subject_id"),
+             alpha = 0.1, color = "#1f77b4") +
+    # Add average prediction curve
+    stat_summary(data = pred_data, 
+                aes_string(x = pc_var, y = "predicted_prob"),
+                fun = mean, geom = "line", color = "#1f77b4", size = 2) +
+    # Add raw data points at bottom
+    geom_point(data = model_data, 
+              aes_string(x = pc_var, shape = "factor(response)"),
+              y = 0.05, size = 2, alpha = 0.7, color = "black") +
+    # Scales
+    scale_shape_manual(values = c("0" = 1, "1" = 16),
+                      name = "Delirium", labels = c("No", "Yes")) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+    labs(
+      x = "Participation Coefficient",
+      y = "Predicted Probability",
+      title = paste("Predicted Probability Curves:", roi_name),
+      subtitle = "Individual curves (light) and average curve (dark) using actual Oz Delta values"
+    ) +
+    theme_minimal()
+  
+  return(curve_plot)
+}
+
+# Usage:
+simple_plot <- plot_simple_logistic(glm_model_ozdelta_pc, sig_interactions$label[1], data_model_df)
+print(simple_plot)
+
+```
+## simple logistic regression plot
+```{r}
+# Function to plot raw data with predicted probability curves overlaid
+plot_raw_data_with_curves <- function(model_results, roi_name) {
+  library(ggplot2)
+  library(dplyr)
+  
+  # Get the specific model for the ROI
+  model_name <- paste0("X", roi_name)
+  model <- model_results$results[[model_name]]$model
+  model_data <- model$model
+  
+  # Find the PC variable name
+  pc_var <- names(model_data)[grep("^X", names(model_data))][1]
+  
+  # Create prediction grid for contour lines
+  pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                  max(model_data[[pc_var]], na.rm = TRUE),
+                  length.out = 50)
+  
+  oz_range <- seq(min(model_data$Diff_OzDeltaPow, na.rm = TRUE),
+                  max(model_data$Diff_OzDeltaPow, na.rm = TRUE),
+                  length.out = 50)
+  
+  # Create grid for predictions
+  pred_grid <- expand.grid(
+    PC = pc_range,
+    OzDelta = oz_range
+  )
+  names(pred_grid) <- c(pc_var, "Diff_OzDeltaPow")
+  
+  # Get predicted probabilities
+  pred_grid$predicted_prob <- predict(model, newdata = pred_grid, type = "response")
+  
+  # Create the plot
+  p <- ggplot() +
+    # Add raw data points first (background)
+    geom_point(data = model_data, 
+              aes_string(x = pc_var, y = "Diff_OzDeltaPow", color = "factor(response)"),
+              size = 3, alpha = 0.7) +
+    # Add contour lines for predicted probability
+    geom_contour(data = pred_grid, 
+                aes_string(x = pc_var, y = "Diff_OzDeltaPow", z = "predicted_prob"),
+                color = "black", size = 1, bins = 5) +
+    # Add contour labels
+    geom_contour(data = pred_grid, 
+                aes_string(x = pc_var, y = "Diff_OzDeltaPow", z = "predicted_prob"),
+                color = "white", size = 0.5, bins = 5) +
+    # Color scale for data points
+    scale_color_manual(values = c("0" = "#f9a340", "1" = "#7fb6cc"), 
+                      name = "Delirium", labels = c("No", "Yes")) +
+    # Labels
+    labs(
+      x = "Participation Coefficient",
+      y = "Oz Delta Power Difference",
+      title = paste("Raw Data with Predicted Probability Contours:", roi_name),
+      subtitle = "Points = actual data, black lines = predicted probability contours"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      legend.position = "right",
+      panel.grid.major = element_blank(),  # Remove major gridlines
+      panel.grid.minor = element_blank()   # Remove minor gridlines
+    )
+  return(p)
+}
+
+# Alternative version with specific probability contour lines
+plot_raw_data_with_specific_curves <- function(model_results, roi_name, prob_levels = c(0.50,0.75)) {
+  library(ggplot2)
+  library(dplyr)
+  
+  # Get the specific model for the ROI
+  model_name <- paste0("X", roi_name)
+  model <- model_results$results[[model_name]]$model
+  model_data <- model$model
+  
+  # Find the PC variable name
+  pc_var <- names(model_data)[grep("^X", names(model_data))][1]
+  
+  # Create prediction grid
+  pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                  max(model_data[[pc_var]], na.rm = TRUE),
+                  length.out = 100)
+  
+  oz_range <- seq(min(model_data$Diff_OzDeltaPow, na.rm = TRUE),
+                  max(model_data$Diff_OzDeltaPow, na.rm = TRUE),
+                  length.out = 100)
+  
+  pred_grid <- expand.grid(
+    PC = pc_range,
+    OzDelta = oz_range
+  )
+  names(pred_grid) <- c(pc_var, "Diff_OzDeltaPow")
+  pred_grid$predicted_prob <- predict(model, newdata = pred_grid, type = "response")
+  
+  # Create the plot
+  p <- ggplot() +
+    # Raw data points
+    geom_point(data = model_data, 
+              aes_string(x = pc_var, y = "Diff_OzDeltaPow", color = "factor(response)"),
+              size = 4, alpha = 0.8) +
+    # Specific probability contour lines
+    geom_contour(data = pred_grid, 
+                aes_string(x = pc_var, y = "Diff_OzDeltaPow", z = "predicted_prob"),
+                breaks = prob_levels, color = "black", size = 1.5) +
+    # Color scale
+    scale_color_manual(values =  c("0" = "#f9a340", "1" = "#7fb6cc"), 
+                      name = "Delirium", labels = c("No", "Yes")) +
+    labs(
+      x = "Participation Coefficient",
+      y = "Oz Delta Power Difference", 
+      title = paste("PC vs Oz Delta with Probability Curves:", roi_name),
+      subtitle = paste("Black lines show", paste(prob_levels*100, collapse = "%, "), "% predicted probability")
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      legend.position = "right",
+      panel.grid.major = element_blank(),  # Remove major gridlines
+      panel.grid.minor = element_blank()   # Remove minor gridlines
+    )
+  return(p)
+}
+
+# Usage:
+# Version 1: Multiple contour lines
+raw_with_curves <- plot_raw_data_with_curves(glm_model_ozdelta_pc, sig_interactions$label[2])
+print(raw_with_curves)
+
+# Version 2: Specific probability levels (25%, 50%, 75%)
+raw_with_specific <- plot_raw_data_with_specific_curves(glm_model_ozdelta_pc, sig_interactions$label[2])
+print(raw_with_specific)
+```
+
+
+
+
+
+
+
+
+## Final Figure plots
+
+# Custom interaction plot of fitted curve
+```{r}
+# Custom interaction plot using raw Diff_OzDeltaPow values
+library(ggplot2)
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+# Get model data
+model_data <- model$model
+pc_var <- "X17Networks_RH_DefaultB_PFCd_2"
+
+# Create prediction grid with actual Oz Delta values
+pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                max(model_data[[pc_var]], na.rm = TRUE),
+                length.out = 100)
+
+# Use each subject's actual Oz Delta value for predictions
+# Create prediction data using all combinations of PC range and actual Oz Delta values
+pred_data_list <- list()
+for(i in 1:nrow(model_data)) {
+  temp_data <- data.frame(
+    PC = pc_range,
+    Diff_OzDeltaPow = model_data$Diff_OzDeltaPow[i]
+  )
+  names(temp_data)[1] <- pc_var
+  temp_data$predicted_prob <- predict(model, newdata = temp_data, type = "response")
+  pred_data_list[[i]] <- temp_data
+}
+
+pred_data <- do.call(rbind, pred_data_list)
+
+# Create the plot (average prediction curve only)
+custom_plot <- ggplot() +
+  # Average prediction curve
+  stat_summary(data = pred_data, 
+               aes_string(x = pc_var, y = "predicted_prob"),
+               fun = mean, geom = "line", color = "#6292c0", size = 2) +
+  # Raw data points
+geom_point(data = model_data, 
+           aes_string(x = pc_var, y = "response", color = "factor(response)"),
+           alpha = 0.6, size = 2) +
+scale_color_manual(values = c("0" = "#ff7f0e", "1" = "#80b6cd"),
+                   name = "Delirium", 
+                   labels = c("No", "Yes")) +
+  labs(
+    x = "PC",
+    y = "Predicted Probability",
+    title = "Interaction Plot (Average Prediction Curve Only)"
+  ) +
+  theme_minimal() +
+  theme(
+    #panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16)
+  )
+
+print(custom_plot)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="RawDiffOZDelta_Interaction2"
+  ggsave(paste0(filename, ".svg"),plot=custom_plot, width = 10, height = 10)
+
+
+```
+## plotting of raw data
+```{r}
+# plot the raw data based model_data
+raw_data_plot <- ggplot(model_data, aes_string(x = pc_var, y = "Diff_OzDeltaPow", color = "factor(response)")) +
+  geom_point(size = 4, alpha = 0.8) +
+  scale_color_manual(values = c("0" = "#f9a340", "1" = "#7fb6cc"), 
+                     name = "Delirium", labels = c("No", "Yes")) +
+  labs(
+    x = "PC",
+    y = "Oz Delta Power Difference",
+    title = "Raw Log of Oz Delta Power vs PC Data"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    axis.title = element_text(size = 12),
+    legend.position = "right",
+    panel.grid.major = element_blank(),  # Remove major gridlines
+    panel.grid.minor = element_blank()   # Remove minor gridlines
+  )
+
+print(raw_data_plot)
+
+# Calculate predicted probabilities for the actual data points
+model_data$predicted_prob <- predict(model, type = "response")
+
+# Create the plot with predicted probabilities
+prob_plot <- ggplot(model_data, aes_string(x = pc_var, y = "predicted_prob")) +
+  geom_point(aes(color = factor(response)), alpha = 0.7, size = 3) +
+  geom_smooth(method = "loess", se = TRUE, color = "#6292c0", size = 1.5) +
+  scale_color_manual(values = c("0" = "#ff7f0e", "1" = "#80b6cd"),
+                     name = "Delirium", 
+                     labels = c("No", "Yes")) +
+  labs(
+    x = "PC",
+    y = "Predicted Probability",
+    title = "Predicted Probabilities from Logistic Regression Model"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    plot.title = element_text(size = 18, hjust = 0.5)
+  ) +
+  ylim(0, 1)
+
+print(prob_plot)
+
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="PredictedProbabilities_RawData_Interaction"
+  ggsave(paste0(filename, ".svg"),plot=prob_plot, width = 10, height = 10)
+## attempt to plot with the X axis being SWA instead of PC
+
+# Create the plot with Diff_OzDeltaPow on x-axis
+prob_plot_oz <- ggplot(model_data, aes(x = Diff_OzDeltaPow, y = predicted_prob)) +
+  geom_point(aes(color = factor(response)), alpha = 0.7, size = 3) +
+  geom_smooth(method = "loess", se = TRUE, color = "#6292c0", size = 1.5) +
+  scale_color_manual(values = c("0" = "#ff7f0e", "1" = "#80b6cd"),
+                     name = "Delirium", 
+                     labels = c("No", "Yes")) +
+  labs(
+    x = "Diff_OzDeltaPow",
+    y = "Predicted Probability",
+    title = "Predicted Probabilities vs Oz Delta Power Difference"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+    plot.title = element_text(size = 18, hjust = 0.5)
+  ) +
+  ylim(0, 1)
+
+print(prob_plot_oz)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="PredictedProbabilities_RawData_Interaction_OzDelta"
+  ggsave(paste0(filename, ".svg"),plot=prob_plot_oz, width = 10, height = 10)
+
+```
+
+
+```{r}
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+# Get model data
+model_data <- model$model
+pc_var <- "X17Networks_RH_DefaultB_PFCd_2"
+
+# Create prediction grid with actual Oz Delta values
+pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                max(model_data[[pc_var]], na.rm = TRUE),
+                length.out = 100)
+
+# Calculate mean and standard deviation for Oz Delta
+oz_mean <- mean(model_data$Diff_OzDeltaPow, na.rm = TRUE)
+oz_sd <- sd(model_data$Diff_OzDeltaPow, na.rm = TRUE)
+
+# Create prediction data for mean, +1SD, and -1SD
+oz_levels <- c(oz_mean - oz_sd, oz_mean, oz_mean + oz_sd)
+oz_labels <- c("Mean - 1SD", "Mean", "Mean + 1SD")
+
+pred_data_combined <- data.frame()
+
+for(j in 1:length(oz_levels)) {
+  temp_data <- data.frame(
+    PC = pc_range,
+    Diff_OzDeltaPow = oz_levels[j]
+  )
+  names(temp_data)[1] <- pc_var
+  temp_data$predicted_prob <- predict(model, newdata = temp_data, type = "response")
+  temp_data$oz_level <- oz_labels[j]
+  pred_data_combined <- rbind(pred_data_combined, temp_data)
+}
+
+# Create the plot with three lines
+custom_plot <- ggplot() +
+  # Prediction curves for mean ± 1SD
+  geom_line(data = pred_data_combined, 
+            aes_string(x = pc_var, y = "predicted_prob", color = "oz_level"),
+            size = 2) +
+  # Raw data points
+  geom_point(data = model_data, 
+             aes_string(x = pc_var, y = "response", shape = "factor(response)"),
+             alpha = 0.6, size = 2, color = "black") +
+  scale_color_manual(values = c("Mean - 1SD" = "#1f77b4", 
+                               "Mean" = "#ff7f0e", 
+                               "Mean + 1SD" = "#2ca02c"),
+                     name = "Oz Delta Level") +
+  scale_shape_manual(values = c("0" = 1, "1" = 16),
+                     name = "Delirium", 
+                     labels = c("No", "Yes")) +
+  labs(
+    x = "PC",
+    y = "Predicted Probability",
+    title = "Interaction Plot (Mean ± 1 Standard Deviation)"
+  ) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16)
+  )
+
+print(custom_plot)
+
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="DiffOZDelta_Mean_SD_Interaction2"
+  ggsave(paste0(filename, ".svg"),plot=custom_plot, width = 10, height = 10)
+
+
+```
+
+
+
+
+
+
+# log odds ratio plot for logistic regression model
+```{r}
+# Custom log-odds ratio plot using raw Diff_OzDeltaPow values
+library(ggplot2)
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+# Get model data
+model_data <- model$model
+pc_var <- "X17Networks_RH_DefaultB_PFCd_2"
+
+# Create prediction grid with actual Oz Delta values
+pc_range <- seq(min(model_data[[pc_var]], na.rm = TRUE),
+                max(model_data[[pc_var]], na.rm = TRUE),
+                length.out = 100)
+
+# Use each subject's actual Oz Delta value for predictions
+# Create prediction data using all combinations of PC range and actual Oz Delta values
+pred_data_list <- list()
+for(i in 1:nrow(model_data)) {
+  temp_data <- data.frame(
+  PC = pc_range,
+  Diff_OzDeltaPow = model_data$Diff_OzDeltaPow[i]
+  )
+  names(temp_data)[1] <- pc_var
+  pred_out <- predict(model, newdata = temp_data, type = "link", se.fit = TRUE)
+  temp_data$predicted_prob <- pred_out$fit
+  pred_data_list[[i]] <- temp_data
+}
+
+pred_data <- do.call(rbind, pred_data_list)
+
+# Create the plot (average prediction curve only)
+custom_plot <- ggplot() +
+  # Average prediction curve
+  stat_summary(data = pred_data, 
+               aes_string(x = pc_var, y = "predicted_prob"),
+               fun = mean, geom = "line", color = "#6292c0", size = 2) +
+  # Raw data points
+  labs(
+    x = "PC",
+    y = "Log-Odds",
+    title = "Log-Odds Plot (Average Prediction Curve Only)"
+  ) +
+  theme_minimal() +
+  theme(
+    #panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),
+    axis.text.y = element_text(size = 14),
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16)
+  )
+
+print(custom_plot)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="RawDiffOZDelta_LogOdds_Interaction"
+  ggsave(paste0(filename, ".svg"),plot=custom_plot, width = 10, height = 10)
+
+
+```
+# plot IQ range
+```{r}
+# Custom interaction plot using raw Diff_OzDeltaPow values
+library(ggplot2)
+# Get the exact variable names
+library(interactions)  # Ensure interact_plot is available
+
+roi_name <- sig_interactions$label[1]
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+
+# Find the PC variable name
+pc_var <- names(model$model)[grep("^X", names(model$model))][1]
+
+# Use the exact variable name
+quartile_values <- quantile(
+  model_data$Diff_OzDeltaPow,
+  c(0.25, 0.50, 0.75),
+  na.rm = TRUE
+)
+iqr_plot <- interact_plot(
+  model,
+  pred = "X17Networks_RH_DefaultB_PFCd_2",
+  modx = "Diff_OzDeltaPow",
+  modx.values = quartile_values,
+  plot.points = TRUE,
+  x.label = "PC",
+  y.label = "Predicted Probability",
+  colors = c("#7fb6cc", "#1f77b4", "#f9a340")
+) +
+  theme_minimal() +
+  theme(
+    panel.grid.minor = element_blank(),
+    axis.text.x = element_text(size = 14),      # X-axis text size
+    axis.text.y = element_text(size = 14),      # Y-axis text size
+    axis.title.x = element_text(size = 16),     # X-axis title size
+    axis.title.y = element_text(size = 16),     # Y-axis title size
+    legend.text = element_text(size = 12),      # Legend text size
+    legend.title = element_text(size = 14)
+  )
+
+print(iqr_plot)
+
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+filename="DiffOZDelta_Interaction_IQ"
+ggsave(paste0(filename, ".svg"),plot=iqr_plot, width = 10, height = 10)
+
+```
+
+
+
+
+
+# interaction plot + raw data plotted
+```{r}
+# Debug and fix the data plots with error checking
+
+# Check if required columns exist
+
+data_plot1 <- data_model_noNA[, c("response", "X17Networks_RH_DefaultB_PFCd_2", "Diff_OzDeltaPow")]
+# Create binned version more carefully
+data_plot1$OzDelta_binned <- cut(data_model_noNA$Diff_OzDeltaPow, 
+                                breaks = quantile(data_model_noNA$Diff_OzDeltaPow, 
+                                                 probs = c(0, 0.33, 0.67, 1), 
+                                                 na.rm = TRUE), 
+                                labels = c("Low", "Medium", "High"),
+                                include.lowest = TRUE)
+
+# Check binning worked
+cat("Binning results:", table(data_plot1$OzDelta_binned), "\n")
+
+# DATA-ONLY PLOT (Raw data scatter plot) - FIXED VERSION
+data_plot <- ggplot(data_plot1, aes(x = X17Networks_RH_DefaultB_PFCd_2, 
+                                   y = response)) + # nolint: indentation_linter.
+  geom_point(aes(color = OzDelta_binned), 
+             size = 3, alpha = 0.7, 
+             position = position_jitter(height = 0.02, width = 0)) +  # Add jitter for visibility
+  geom_smooth(aes(color = OzDelta_binned), 
+              method = "glm", 
+              method.args = list(family = "binomial"),
+              se = TRUE, alpha = 0.2) +
+  scale_color_manual(values = c("Low" = "#1f77b4", 
+                               "Medium" = "#ff7f0e", 
+                               "High" = "#2ca02c"),
+                     na.value = "grey50") +  # Handle any NAs
+  labs(
+    x = "PC (X17Networks_RH_DefaultB_PFCd_2)",
+    y = "Delirium Occurrence",
+    color = "Diff_OzDeltaPow",
+    title = "Raw Data: PC vs Delirium by Oz Delta Power"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 16, hjust = 0.5)
+  ) +
+  scale_y_continuous(breaks = c(0, 1), labels = c("No Delirium", "Delirium"))
+
+# Test plot creation
+tryCatch({
+  print(data_plot)
+  cat("Binned plot created successfully\n")
+}, error = function(e) {
+  cat("Error creating binned plot:", e$message, "\n")
+})
+
+# CONTINUOUS VERSION - FIXED
+data_plot_continuous <- ggplot(data_plot1, aes(x = X17Networks_RH_DefaultB_PFCd_2, 
+                                              y = Diff_OzDeltaPow)) +
+  geom_point(aes(color = Diff_OzDeltaPow), 
+             size = 3, alpha = 0.7,
+             position = position_jitter(height = 0.02, width = 0)) +  # Add jitter
+  scale_color_gradient2(low = "#faa441", 
+                        mid = "#6292c0", 
+                        high = "#80b6cd",
+                        midpoint = median(data_plot1$Diff_OzDeltaPow, na.rm = TRUE),
+                        name = "Diff_OzDeltaPow") +
+  labs(
+    x = "PC (X17Networks_RH_DefaultB_PFCd_2)",
+    y = "Diff in Oz Delta Power",
+    title = "Raw Data: PC vs Continuous Oz Delta Power (Delirium)"
+  ) +
+  theme_classic() +
+  theme(
+    axis.text = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    plot.title = element_text(size = 16, hjust = 0.5)
+  ) 
+  #scale_y_continuous(breaks = c(0, 1), labels = c("No Delirium", "Delirium"))
+
+# Test plot creation
+print(data_plot_continuous)
+  ggsave("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/Data_Plot_PC_OzDelta_Continuous.svg", 
+         plot = data_plot_continuous, 
+         width = 12, height = 8, 
+         dpi = 300, device = "svg")
+
+# Check current working directory
+cat("Current working directory:", getwd(), "\n")
+
+# Set working directory with error checking
+target_dir <- "/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/"
+
+if(dir.exists(target_dir)) {
+  setwd(target_dir)
+  cat("Successfully changed to:", getwd(), "\n")
+} else {
+  cat("Directory does not exist:", target_dir, "\n")
+  cat("Creating directory...\n")
+  dir.create(target_dir, recursive = TRUE)
+  setwd(target_dir)
+}
+
+# Save plots with error handling
+tryCatch({
+  ggsave("Data_Plot_PC_OzDelta_Binned.svg", 
+         plot = data_plot, 
+         width = 12, height = 8, 
+         dpi = 300, device = "svg")
+  cat("Binned plot saved successfully\n")
+}, error = function(e) {
+  cat("Error saving binned plot:", e$message, "\n")
+})
+
+tryCatch({
+
+  cat("Continuous plot saved successfully\n")
+}, error = function(e) {
+  cat("Error saving continuous plot:", e$message, "\n")
+})
+
+# Also save as PNG as backup
+tryCatch({
+  ggsave("Data_Plot_PC_OzDelta_Binned.png", 
+         plot = data_plot, 
+         width = 12, height = 8, 
+         dpi = 300)
+  cat("Binned plot PNG saved successfully\n")
+}, error = function(e) {
+  cat("Error saving binned PNG:", e$message, "\n")
+})
+
+tryCatch({
+  ggsave("Data_Plot_PC_OzDelta_Continuous.png", 
+         plot = data_plot_continuous, 
+         width = 12, height = 8, 
+         dpi = 300)
+  cat("Continuous plot PNG saved successfully\n")
+}, error = function(e) {
+  cat("Error saving continuous PNG:", e$message, "\n")
+})
+
+# List files to confirm saving
+cat("Files in directory:\n")
+cat(paste(list.files(pattern = "Data_Plot"), collapse = "\n"), "\n")
+
+# try 3D static plot using scatterplot3d
+library(scatterplot3d)
+
+# Prepare data
+plot_data <- data_model_noNA[complete.cases(data_model_noNA[c("X17Networks_RH_DefaultB_PFCd_2", "Diff_OzDeltaPow", "response")]), ]
+
+# Get predicted probabilities for actual data
+plot_data$predicted_prob <- predict(model, newdata = plot_data, type = "response")
+
+# Create color vector based on actual delirium outcome
+colors <- ifelse(plot_data$response == 1, "#f9a340", "#7fb6cc")
+
+# Create 3D plot
+#svg("3D_Static_Plot.svg", width = 12, height = 10)
+s3d <- scatterplot3d(
+  x = plot_data$X17Networks_RH_DefaultB_PFCd_2,
+  y = plot_data$Diff_OzDeltaPow,
+  z = plot_data$predicted_prob,
+  color = colors,
+  pch = 16,
+  cex.symbols = 1.5,
+  xlab = "Participation Coefficient",
+  ylab = "Diff Oz Delta Power",
+  zlab = "Predicted Probability",
+  main = "3D Interaction: PC × Oz Delta Power → Delirium Risk",
+  grid = TRUE,
+  box = TRUE,
+  angle = 45
+)
+print(s3d)
+# Add legend
+legend("topright", 
+       legend = c("No Delirium", "Delirium"),
+       col = c("#7fb6cc", "#f9a340"),
+       pch = 16,
+       cex = 1.2)
+dev.off()
+
+
+```
+
+
+
+
+
+# for the avg pc_data
+```{r}
+# Extract the actual model object (adjust 'avg_pc' if needed)
+model <- glm_model_ozdelta_avgpc$results$avg_pc$model
+# Create an interaction plot
+i <- interact_plot(
+  model,
+  pred = "avg_pc",
+  modx = "Diff_OzDeltaPow",
+  plot.points = TRUE,
+  x.label = "PC",
+  y.label = "Predicted Probability"
+) +
+  #scale_color_manual(values = c("#f9a340", "#fde725", "#7fb6cc")) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank(),
+    plot.background = element_blank()
+  )
+print(i)
+
+```
+
+Look at the top 10 predictors based on the proability distribution
+```{r}
+# Calculate the maximum value for each predictor
+max_values <- apply(marginal_effects_df, 2, max, na.rm = TRUE)
+
+# Sort the predictors by their maximum values
+sorted_max_values <- sort(max_values, decreasing = TRUE)
+
+# Get the top 10 predictors
+top_10_predictors <- head(sorted_max_values, 10)
+
+# Print the top 10 predictors
+print(top_10_predictors)
+
+# Convert to a data frame
+top_10_df <- data.frame(
+  Predictor = names(top_10_predictors),
+  MaxValue = top_10_predictors
+)
+# Print each predictor on a new line
+cat(paste(names(top_10_predictors), "=", round(top_10_predictors, 4), "\n"))
+
+# Plot the top 10 predictors
+ggplot(top_10_df, aes(x = reorder(Predictor, MaxValue), y = MaxValue)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +
+  labs(
+    title = "Top 10 Predictors with Highest Probabilities",
+    x = "Predictor",
+    y = "Maximum Probability"
+  ) +
+  theme_minimal()
+```
+## Mean & SD for the diff Delta Power Post-op
+```{r}
+
+data_delta_power <- na.omit(subject_data_ozdelta)
+#mean of the diff delta power
+mean_postdiff_delta <- mean(oz_delta_orig$OzDeltaPow_Post)
+print(mean_postdiff_delta)
+#sd of the diff delta power
+sd_postdiff_delta <- sd(oz_delta_orig$OzDeltaPow_Post)
+print(sd_postdiff_delta)
+
+mean_prediff_delta <- mean(oz_delta_orig$OzDeltaPow_Pre)
+print(mean_prediff_delta)
+sd_prediff_delta <- sd(oz_delta_orig$OzDeltaPow_Pre)
+print(sd_prediff_delta)
+
+#csv oz_delta into
+write.csv(oz_delta_orig, "/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/Oz_deltapower_organised.csv")
+```
+
+## Plot the probability distribution for 1 regions
+```{r}
+# plot individual region
+data_combine <- data.frame(
+  Probability = marginal_effects$X17Networks_RH_DefaultB_PFCd_2,
+  PC = data_model_noNA$X17Networks_RH_DefaultB_PFCd_2
+  Diff_OzDeltaPow = data_model_noNA$Diff_OzDeltaPow
+)
+
+# Scatter plot with point color based on Probability
+s1 <- ggplot(data_combine, aes(x = PC, y = Diff_OzDeltaPow, color = Probability)) +
+  geom_point(size = 3) +  # Add points with size 3
+  scale_color_gradient(low = "#0C7D79", high = "#C03B2B") +  # Define color gradient
+  geom_smooth(method = "lm", se = TRUE, color = "black") +  # Add linear regression line
+  labs(
+    title = "Scatter Plot of PC X17Networks_RH_DefaultB_PFCd_2* Diff_OzDeltaPow",
+    x = "PC for Significant ROI",
+    y = "Diff OzDeltaPow",
+    color = "Probability"
+  ) +
+  theme_minimal()+
+  theme(
+    plot.title = element_text(size = 14, face = "bold"),
+    plot.subtitle = element_text(size = 12),
+    axis.title = element_text(size = 14),
+    axis.text = element_text(size =12),
+    legend.title = element_text(size = 12),
+    legend.text = element_text(size = 10),
+    legend.position = "right",
+    panel.grid.major = element_blank(),  # Remove major gridlines
+    panel.grid.minor = element_blank()   # Remove minor gridlines
+  )
+    print(s1)
+setwd("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Graph_Theory/schaef_400/lm_model/update_model/") 
+  # Save the plot as an SVG file
+
+filename="Prob_DiffOZdelta_interact_PC_ROI1"
+  #ggsave(paste0(filename, ".svg"),plot=s1, width = 10, height = 10)
+
+```
+
+
+
+
+
+```{r}
+# Get the specific model for a significant ROI
+#roi_name <- 17Networks_RH_DefaultB_PFCd_2
+model_name <- "X17Networks_RH_DefaultB_PFCd_2"
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+
+# Get the model data
+model_data <- model$model
+
+# Find the PC variable name
+pc_var <- model_name
+
+# Create a grid of values for predictions
+pc_seq <- seq(min(model_data[[pc_var]], na.rm = TRUE), 
+              max(model_data[[pc_var]], na.rm = TRUE), 
+              length.out = 100)
+
+# Choose specific values of oz_delta_diff to plot (quartiles)
+oz_levels <- quantile(model_data$Diff_OzDeltaPow, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+
+# Generate predicted probabilities
+newdata <- expand.grid(pc_value = pc_seq,
+                       oz_delta_diff = oz_levels)
+
+# Set proper column names to match your model
+names(newdata) <- c(pc_var, "Diff_OzDeltaPow")
+
+newdata$predicted_prob <- predict(model, newdata = newdata, type = "response")
+newdata$oz_label <- factor(round(newdata$Diff_OzDeltaPow, 3))  # for coloring
+
+# Plot original data and overlay predicted logistic curves
+library(ggplot2)
+# Get the specific model for a significant ROI
+roi_name <- sig_interactions$label[378]
+model_name <- paste0("X", roi_name)
+model <- glm_model_ozdelta_pc$results[[model_name]]$model
+
+# Get the model data
+model_data <- model$model
+
+# Find the PC variable name
+pc_var <- names(model_data)[grep("^X", names(model_data))][88]
+
+# Create a grid of values for predictions
+pc_seq <- seq(min(model_data[[pc_var]], na.rm = TRUE), 
+              max(model_data[[pc_var]], na.rm = TRUE), 
+              length.out = 100)
+
+# Choose specific values of oz_delta_diff to plot (quartiles)
+oz_levels <- quantile(model_data$Diff_OzDeltaPow, probs = c(0.25, 0.5, 0.75), na.rm = TRUE)
+
+# Generate predicted probabilities
+newdata <- expand.grid(pc_value = pc_seq,
+                       oz_delta_diff = oz_levels)
+
+# Set proper column names to match your model
+names(newdata) <- c(pc_var, "Diff_OzDeltaPow")
+
+newdata$predicted_prob <- predict(model, newdata = newdata, type = "response")
+newdata$oz_label <- factor(round(newdata$Diff_OzDeltaPow, 3))  # for coloring
+
+# Plot original data and overlay predicted logistic curves
+library(ggplot2)
+
+ggplot() +
+  # Original data points
+  geom_jitter(data = model_data,
+              aes_string(x = pc_var, y = "response", fill = "Diff_OzDeltaPow"),
+              width = 0.01, height = 0.02, alpha = 0.6, size = 3, shape = 21) +
+  # Predicted curves
+  geom_line(data = newdata,
+            aes_string(x = pc_var, y = "predicted_prob", color = "oz_label"),
+            size = 1.5) +
+  # Color scales
+  scale_fill_gradient2(low = "#2166ac", mid = "white", high = "#d73027",
+                       name = "Oz Delta\n(Observed)") +
+  scale_color_manual(values = c("#1f77b4", "#ff7f0e", "#2ca02c"),
+                     name = "Oz Delta\n(Quartiles)") +
+  labs(x = "Participation Coefficient",
+       y = "Delirium (Observed & Predicted Probability)",
+       title = paste("Logistic Curves for ROI:", roi_name)) +
+  theme_minimal() +
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text = element_text(size = 14),
+    axis.title = element_text(size = 16)
+)
+
+```
+
+```{r}
+# Create proper overlay plot with model prediction contours
+# First, create a finer grid for smooth contour lines
+pc_fine <- seq(min(model_data[[pc_var]], na.rm = TRUE), 
+               max(model_data[[pc_var]], na.rm = TRUE), 
+               length.out = 50)
+oz_fine <- seq(min(model_data$Diff_OzDeltaPow, na.rm = TRUE), 
+               max(model_data$Diff_OzDeltaPow, na.rm = TRUE), 
+               length.out = 50)
+
+pred_grid <- expand.grid(pc_value = pc_fine, oz_value = oz_fine)
+names(pred_grid) <- c(pc_var, "Diff_OzDeltaPow")
+
+# Get predicted probabilities for the full grid
+pred_grid$predicted_prob <- predict(model, newdata = pred_grid, type = "response")
+
+# Create the overlay plot
+overlay_plot <- ggplot() +
+# Contour lines showing predicted probability
+geom_contour(
+  data = pred_grid,
+  aes_string(x = pc_var, y = "Diff_OzDeltaPow", z = "predicted_prob"),
+  color = "black", size = 0.8, alpha = 0.7
+) +
+# Original data points
+geom_point(
+  data = model_data,
+  aes_string(x = pc_var, y = "Diff_OzDeltaPow", color = "factor(response)"),
+  size = 3, alpha = 0.7
+) +
+# Color scale for observed delirium
+scale_color_manual(
+  values = c("0" = "#2166ac", "1" = "#d73027"),
+  name = "Delirium\nObserved",
+  labels = c("No", "Yes")
+) +
+labs(
+  x = "Participation Coefficient",
+  y = "Oz Delta Power",
+  title = paste("Delirium Prediction Model with Contours:", roi_name),
+  subtitle = "Contour lines show predicted probability of delirium"
+) +
+theme_minimal() +
+theme(
+  panel.grid = element_blank(),
+  axis.text = element_text(size = 12),
+  axis.title = element_text(size = 14),
+  legend.text = element_text(size = 12),
+  legend.title = element_text(size = 12),
+  plot.title = element_text(size = 16),
+  plot.subtitle = element_text(size = 12)
+)
+
+print(overlay_plot)
+
+# Set pc_var based on ROI name directly
+pc_var <- paste0("PC_", roi_name)  # e.g., "PC_LeftHippocampus"
+
+# Or if your column names have a different pattern:
+pc_var <- paste0(roi_name, "_PC")  # e.g., "LeftHippocampus_PC"
+
+# Alternative version with filled contours (heatmap style)
+heatmap_plot <- ggplot() +
+  # Filled contour (heatmap) showing predicted probability
+  geom_contour_filled(data = pred_grid,
+                      aes_string(x = pc_var, y = "Diff_OzDeltaPow", z = "predicted_prob"),
+                      alpha = 0.6) +
+  # Original data points on top
+  geom_point(data = model_data,
+             aes_string(x = pc_var, y = "Diff_OzDeltaPow", 
+                       shape = "factor(response)", color = "factor(response)"),
+             size = 4, stroke = 1.5) +
+  # Custom colors and shapes
+  scale_shape_manual(values = c("0" = 1, "1" = 19),  # hollow vs filled circles
+                     name = "Delirium\nObserved",
+                     labels = c("No", "Yes")) +
+  scale_color_manual(values = c("0" = "white", "1" = "black"),
+                     name = "Delirium\nObserved",
+                     labels = c("No", "Yes")) +
+  scale_fill_viridis_d(name = "Predicted\nProbability") +
+  labs(x = "Participation Coefficient",
+       y = "Oz Delta Power",
+       title = paste("Delirium Prediction Heatmap:", roi_name)) +
+  theme_minimal() +
+  theme(panel.grid = element_blank(),
+        axis.text = element_text(size = 12),
+        axis.title = element_text(size = 14),
+        legend.text = element_text(size = 12),
+        legend.title = element_text(size = 12),
+        plot.title = element_text(size = 16))
+
+print(heatmap_plot)
+```
+
+```{r}
+## Fitted Model Curve Plot - PC vs Delta Power
+# Function to plot the fitted curve with PC on x-axis and delta power on y-axis
+plot_fitted_curve_top75 <- function(model, model_data, pc_var_name, roi_label) {
+  library(ggplot2)
+  
+  # Get the actual data used in the model
+  plot_data <- model_data
+  
+  # Create a sequence of PC values for smooth curve
+  pc_range <- seq(min(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  max(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  length.out = 100)
+  
+  # Use only the 75th percentile (top quartile) of delta power
+  delta_75 <- quantile(plot_data$Diff_OzDeltaPow, 0.85, na.rm = TRUE)
+  
+  # Create prediction data for 75th percentile delta power
+  pred_data <- data.frame(
+    PC = pc_range,
+    Diff_OzDeltaPow = delta_75
+  )
+  names(pred_data)[1] <- pc_var_name
+  pred_data$predicted_prob <- predict(model, newdata = pred_data, type = "response")
+  
+  # Only keep points where predicted probability is >= 0.75
+  pred_data_top <- pred_data[pred_data$predicted_prob >= 0.75, ]
+  
+  # Create the plot
+  p <- ggplot(pred_data_top, aes_string(x = pc_var_name, y = "predicted_prob")) +
+    geom_line(size = 1.5, color = "#2ca02c") +
+    scale_y_continuous(limits = c(0.75, 1), labels = scales::percent_format()) +
+    labs(
+      x = "Participation Coefficient",
+      y = "Predicted Probability of Delirium",
+      title = paste("Fitted Model Curve (Top 75% Prob):", roi_label),
+      subtitle = "Only showing predicted probability ≥ 75% at 75th percentile Delta Power"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      panel.grid.minor = element_blank(),
+      legend.position = "right"
+    )
+  
+  return(p)
+}
+plot_fitted_curve_pc_delta <- function(model, model_data, pc_var_name, roi_label) {
+  library(ggplot2)
+  
+  # Get the actual data used in the model
+  plot_data <- model_data
+  
+  # Create a sequence of PC values for smooth curve
+  pc_range <- seq(min(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  max(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  length.out = 100)
+  
+  # Create a sequence of delta power values for contour lines
+  delta_range <- seq(min(plot_data$Diff_OzDeltaPow, na.rm = TRUE),
+                     max(plot_data$Diff_OzDeltaPow, na.rm = TRUE),
+                     length.out = 100)
+  
+  # Create prediction grid
+  pred_grid <- expand.grid(
+    PC = pc_range,
+    DeltaPow = delta_range
+  )
+  names(pred_grid) <- c(pc_var_name, "Diff_OzDeltaPow")
+  
+  # Get predicted probabilities
+  pred_grid$predicted_prob <- predict(model, newdata = pred_grid, type = "response")
+  
+  # Create the plot with contour lines showing probability
+  p <- ggplot(pred_grid, aes_string(x = pc_var_name, y = "Diff_OzDeltaPow")) +
+    geom_contour_filled(aes(z = predicted_prob), alpha = 0.7) +
+    geom_contour(aes(z = predicted_prob), color = "white", size = 0.5) +
+    scale_fill_viridis_d(name = "Predicted\nProbability", labels = scales::percent_format()) +
+    labs(
+      x = "Participation Coefficient",
+      y = "Difference in Oz Delta Power",
+      title = paste("Fitted Model Surface:", roi_label),
+      subtitle = "Contours show predicted probability of delirium"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      panel.grid.minor = element_blank(),
+      legend.position = "right"
+    )
+  
+  return(p)
+}
+
+# Alternative: Simple curve showing relationship at different delta power levels
+plot_fitted_curve_simple <- function(model, model_data, pc_var_name, roi_label) {
+  library(ggplot2)
+  
+  # Get the actual data used in the model
+  plot_data <- model_data
+  
+  # Create a sequence of PC values for smooth curve
+  pc_range <- seq(min(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  max(plot_data[[pc_var_name]], na.rm = TRUE), 
+                  length.out = 100)
+  
+  # Use quantiles for different delta power levels
+  delta_levels <- quantile(plot_data$Diff_OzDeltaPow, c(0.25, 0.5, 0.75), na.rm = TRUE)
+  
+  # Create prediction data for each delta level
+  pred_list <- list()
+  for(i in 1:length(delta_levels)) {
+    pred_data <- data.frame(
+      PC = pc_range,
+      DeltaPow = delta_levels[i]
+    )
+    names(pred_data) <- c(pc_var_name, "Diff_OzDeltaPow")
+    pred_data$predicted_prob <- predict(model, newdata = pred_data, type = "response")
+    pred_data$delta_level <- names(delta_levels)[i]
+    pred_list[[i]] <- pred_data
+  }
+  
+  # Combine all predictions
+  all_pred <- do.call(rbind, pred_list)
+  
+  # Create the plot
+  p <- ggplot(all_pred, aes_string(x = pc_var_name, y = "predicted_prob", color = "delta_level")) +
+    geom_line(size = 1.5) +
+    scale_y_continuous(limits = c(0, 1), labels = scales::percent_format()) +
+    scale_color_manual(values = c("25%" = "#1f77b4", "50%" = "#ff7f0e", "75%" = "#2ca02c"),
+                       name = "Delta Power\nLevel") +
+    labs(
+      x = "Participation Coefficient",
+      y = "Predicted Probability of Delirium",
+      title = paste("Fitted Model Curves:", roi_label),
+      subtitle = "Lines show different levels of Oz Delta Power"
+    ) +
+    theme_minimal() +
+    theme(
+      plot.title = element_text(size = 14, face = "bold"),
+      plot.subtitle = element_text(size = 12),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      panel.grid.minor = element_blank(),
+      legend.position = "right"
+    )
+  
+  return(p)
+}
+```
+
+# Plot fitted curve for the first significant ROI
+```{r}
+# Plot fitted curves for the top 10 predictors based on top_10_predictors
+if (exists("top_10_predictors") && length(top_10_predictors) > 0) {
+  for (roi_label in names(top_10_predictors)) {
+    model_name <- paste0("X", roi_label)
+    if (model_name %in% names(glm_model_ozdelta_pc$results)) {
+      model <- glm_model_ozdelta_pc$results[[model_name]]$model
+      model_data <- model$model
+      pc_var_name <- names(model_data)[grep("^X", names(model_data))][1]
+      if (!is.na(pc_var_name)) {
+        simple_plot <- plot_fitted_curve_simple(model, model_data, pc_var_name, roi_label)
+        print(simple_plot)
+        ggsave(paste0("Fitted_Curve_TopPredictor_", roi_label, ".svg"),
+               plot = simple_plot, width = 10, height = 6)
+      }
+    }
+  }
+} else {
+  cat("No top predictors found to plot.\n")
+}
+```
+
+
+
+## Running logistic regression with cognitive data
+```{r}
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+cog_data$tmtb
+covariates <- c("tmtb")
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_cog_pc <- run_glm_model(cog_data, pc_data, response_var, covariates) # nolint
+data_model_df = glm_model_cog_pc$data_model_df #that's the actual data that went into the model
+View(glm_model_cogpc$coef_pval_df)
+
+# Extract the interactions between ROI and covariates
+interactions <- glm_model_cog_pc$coef_pval_df[grep(":", glm_model_cog_pc$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+
+
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+
+# Get the significant odds ratio
+interactions$sig_OddsRatio <- ifelse(interactions$PValue < 0.05, interactions$OddsRatio, 0)
+data <- data.frame(label = interactions$label, SignificantCoefficient = interactions$sig_OddsRatio)
+
+#plot_brain_data_oddsratio(data, "PC_ROI_cogtmtb_sigodds")
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+
+plot_brain_data(data2, "PC_ROI_cogtmtb_sigcoeffs")
+```
+
+
+## Attempt to run glm function for il8_diff
+```{r}
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+covariates <- c("il8_diff")
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_il8pc <- run_glm_model(subject_data, pc_data, response_var, covariates) # nolint
+
+# Extract the interactions between ROI and covariates
+interactions <- glm_model_il8pc$coef_pval_df[grep(":", glm_model_il8pc $coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+
+
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+
+plot_brain_data(data2, "PC_ROI_il8diff_sigcoeffs")
+
+```
+
+## Run Delirium ~ tmtb + diff_OzDeltaPow * PC
+```{r}
+run_glm_model_cog_ozdelta <- function(subject_data, pc_data, response_var, covariates) {
+  library(dplyr)
+  
+  # Ensure the response variable and covariates exist in the subject_data
+  if (!all(c(response_var, covariates) %in% colnames(subject_data))) {
+    stop("Response variable or covariates not found in subject_data.")
+  }
+  
+  # Initialize lists to store results
+  results <- list()
+  coef_pval_df <- data.frame()
+  aic_list <- c()
+  
+  # Iterate through each ROI in pc_data
+  for (roi in colnames(pc_data)) {
+    # Add the current ROI to the subject_data
+    subject_data$ROI <- pc_data[[roi]]
+    
+    # Define the formula for the logistic regression
+    formula <- as.formula(paste(response_var, "~", paste(c(covariates, "ROI", "Diff_OzDeltaPow:ROI"), collapse = " + ")))
+    
+    # Fit the logistic regression model
+    model <- glm(formula, data = subject_data, family = binomial(link = "logit"))
+    
+    # Extract coefficients and p-values
+    coef_summary <- summary(model)$coefficients
+    coef_df <- data.frame(
+      ROI = roi,
+      Variable = rownames(coef_summary),
+      Beta = coef_summary[, "Estimate"],
+      StdError = coef_summary[, "Std. Error"],
+      ZValue = coef_summary[, "z value"],
+      PValue = coef_summary[, "Pr(>|z|)"]
+    )
+    
+    # Append to the results
+    coef_pval_df <- rbind(coef_pval_df, coef_df)
+    aic_list <- c(aic_list, AIC(model))
+    
+    # Store the model in the results list
+    results[[roi]] <- model
+  }
+  
+  # Return the results as a list
+  return(list(results = results, coef_pval_df = coef_pval_df, aic_list = aic_list))
+}
+```
+
+```{r}
+subject_data_ozdelta_cog <- merge(subject_data_ozdelta, cog_data[, c("patientid", "tmta", "tmtb", "tmt_diff")], by = "patientid", all.x = TRUE)
+# Run the logistic regression model
+ Define covariates and response variable
+covariates <- c("tmtb", "Diff_OzDeltaPow")
+response_var <- "bin_delirium"
+
+# Run the logistic regression model
+glm_model_cog_ozdelta_pc <- run_glm_model_cog_ozdelta(subject_data_ozdelta_cog, pc_data, response_var, covariates)
+
+# View the results
+#View(glm_model_cog_ozdelta_pc$coef_pval_df)
+
+# Extract the interactions between ROI and covariates
+interactions <- glm_model_cog_ozdelta_pc$coef_pval_df[grep(":", glm_model_cog_ozdelta_pc$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+
+colnames(interactions)[colnames(interactions) == "ROI"] <- "label"
+
+
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+
+plot_brain_data(data2, "PC_ROI_il8diff_cogtmtb_sigcoeffs")
+
+
+
+
+```
+
+
+
+
+
+
+Note: Running the Log Reg. with FC (ignore for now)
+## Relationship between ACh and LC FC and Delirium outcome 
+```{r}
+# load in FC data
+fc_lc_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/avg_LC_fc_400_all_subs.csv", header = FALSE)
+fc_nbm_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/avg_nbm_fc_400_all_subs.csv", header = FALSE)
+fc_ppn_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Functional_Connectivity/AAS_nuclei/avg_ppn_fc_400_all_subs.csv", header = FALSE)
+
+## Clinical Data
+subject_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/subject_data_IL810_mri.csv")
+# cog data 
+cog_data <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/mri_scanner_cog.csv")
+#load in the ROI names
+roi_names <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/code/schaef_400roi_names.csv", header = FALSE)
+## oz delta data
+oz_delta_orig <- read.csv("/Users/ntaylor/Library/CloudStorage/OneDrive-TheUniversityofSydney(Staff)/Postdoc_Rob/Analysis/Demographic_Data/Oz_deltapower.csv")
+# Remove "_" in subject names
+oz_delta_orig$Sub <- gsub("_", "", oz_delta_orig$Sub)
+# Filter for MRI subjects
+oz_delta <- oz_delta_orig[oz_delta_orig$Sub %in% subject_data$patientid, ]
+# Merge oz_delta with subject_data based on patientid
+subject_data_ozdelta <- merge(subject_data, oz_delta, by.x = "patientid", by.y = "Sub", all.x = TRUE)
+
+```
+
+
+
+
+## Running the glm on the LC FC data - simple model, no covariates
+
+## Take the exponentiate of the beta coefficients to convert to an odds ratio
+Odds Ratio : The odds ratio is the exponentiated coefficient. It is the ratio of the odds of the event occurring in the exposed group to the odds of the event occurring in the unexposed group. An odds ratio of 1 indicates that the event is equally likely in both groups. An odds ratio greater than 1 indicates that the event is more likely in the exposed group, while an odds ratio less than 1 indicates that the event is less likely in the exposed group.
+Interpretaiton - if B >0, then e^B >1, means that the functional connections increases, the odds of delirium increase (if in the inverse, increase in FC is associated with decrease odds of delirium)
+
+```{r}
+fc_data <- fc_lc_data
+#rename colum names in pc_data with roi_names
+colnames(fc_data) <- roi_names$V1[1:400]
+# Assuming subject_data, data_fc, response_var, and no covariate
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_lc_fc <- run_glm_simple_model(subject_data, fc_data, response_var) # nolint
+
+View(glm_modelcoeffs <- glm_model_lc_fc$coef_pval_df)
+```
+
+# get the above significant coeffs and plot them on the brain
+```{r}
+glm_model_interest <- glm_model_lc_fc #change to model of interest
+#coefs and pvals from model
+coeffs <- glm_model_interest$coef_pval_df[grep("^X", glm_model_interest$coef_pval_df$Variable), ]
+# Add a column to interactions to indicate significant coefficients
+coeffs$SignificantCoefficient <- ifelse(coeffs$PValue < 0.05, coeffs$Beta, 0)
+#add a column that is Variable 
+coeffs$label <- sub(":.*", "", coeffs$Variable)
+coeffs$label <- sub("X", "", coeffs$label)
+
+# Extract significant interactions
+sig_roi_simple_glm <- coeffs[coeffs$PValue < 0.05, ]
+
+coeffs$sig_OddsRatio <- ifelse(coeffs$PValue < 0.05, coeffs$OddsRatio, 0)
+
+View(sig_roi_simple_glm)
+View(coeffs)
+
+# prepare data for plotting on brain using
+data_lc_fc_sigodds <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$sig_OddsRatio)
+plot_brain_data_oddsratio(data_lc_fc_sigodds, "lc_fc_sigodds_simpleglm")
+#modify - because the 44 sig_OddsRatio is hard to visualise others
+data_lc_fc_sigodds <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$sig_OddsRatio)
+
+
+
+data_lc_fc_sigcoefs <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$SignificantCoefficient)
+plot_brain_data(data_lc_fc_sigcoefs, "lc_fc_sigbeta_simpleglm")
+
+```
+
+```{r}
+#remove the sig_OddsRatio > 40 & replace it with 0
+data_lc_fc_sigodds$SignificantCoefficient[data_lc_fc_sigodds$SignificantCoefficient > 40] <- 0
+
+plot_brain_data_oddsratio(data_lc_fc_sigodds, "lc_fc_sigodds_simpleglm_remove40")
+```
+## need to check the AIC for each ROI in the model
+```{r}
+View(glm_model_lc_fc$aic_list)
+
+#plot the AIC values
+aic_values <- unlist(glm_model_lc_fc$aic_list)
+barplot(aic_values, main="AIC values for each ROI", xlab="ROI", ylab="AIC")
+# Convert AIC values to a data frame for plotting
+aic_df <- data.frame(ROI = names(aic_values), AIC = aic_values)
+
+# Find the best performing region (lowest AIC)
+best_region <- aic_df[which.min(aic_df$AIC), ]
+
+# Plot the AIC values
+ggplot(aic_df, aes(x = reorder(ROI, AIC), y = AIC)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = round(AIC, 2)), hjust = -0.3, size = 3) +
+  geom_point(data = best_region, aes(x = ROI, y = AIC), color = "red", size = 3) +
+  coord_flip() +
+  labs(title = "AIC Values for Each ROI", x = "ROI", y = "AIC") +
+  theme_minimal()
+
+# Print the best performing region
+print(best_region)
+
+# is there a significant difference in the AIC values across regions?
+
+
+```
+
+
+
+```{r}
+# Fit the logistic regression model
+glm_model <- glm(subject_data$bin_delirium ~ ., data = fc_data, family = binomial)
+
+# Calculate VIF for all predictors
+vif_values <- vif(glm_model)
+
+# Print the VIF values
+print(vif_values)
+
+# Identify predictors with high VIF
+high_vif <- names(vif_values[vif_values > 5])
+print(high_vif)
+```
+
+
+## Running Simple Log. Reg on FC ACh 
+```{r}
+fc_data <- fc_nbm_data
+#rename colum names in pc_data with roi_names
+colnames(fc_data) <- roi_names$V1[1:400]
+# Assuming subject_data, data_fc, response_var, and no covariate
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_nbm_fc <- run_glm_simple_model(subject_data, fc_data, response_var) # nolint
+
+View(glm_modelcoeffs <- glm_model_nbm_fc$coef_pval_df)
+```
+
+# get the above significant coeffs and plot them on the brain
+```{r}
+glm_model_interest <- glm_model_nbm_fc #change to model of interest
+#coefs and pvals from model
+coeffs <- glm_model_interest$coef_pval_df[grep("^X", glm_model_interest$coef_pval_df$Variable), ]
+# Add a column to interactions to indicate significant coefficients
+coeffs$SignificantCoefficient <- ifelse(coeffs$PValue < 0.05, coeffs$Beta, 0)
+#add a column that is Variable 
+coeffs$label <- sub(":.*", "", coeffs$Variable)
+coeffs$label <- sub("X", "", coeffs$label)
+
+# Extract significant interactions
+sig_roi_simple_glm <- coeffs[coeffs$PValue < 0.05, ]
+
+coeffs$sig_OddsRatio <- ifelse(coeffs$PValue < 0.05, coeffs$OddsRatio, 0)
+
+View(sig_roi_simple_glm)
+View(coeffs)
+
+# prepare data for plotting on brain using
+data_nbm_fc_sigodds <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$sig_OddsRatio)
+plot_brain_data_oddsratio(data_nbm_fc_sigodds, "nbm_fc_sigodds_simpleglm")
+# sig beta coeffs plotted
+data_nbm_fc_sigcoefs <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$SignificantCoefficient)
+plot_brain_data(data_nbm_fc_sigcoefs, "nbm_fc_sigbeta_simpleglm")
+
+```
+
+## need to check the AIC for each ROI in the model
+```{r}
+View(glm_model_lc_fc$aic_list)
+
+#plot the AIC values
+aic_values <- unlist(glm_model_lc_fc$aic_list)
+barplot(aic_values, main="AIC values for each ROI", xlab="ROI", ylab="AIC")
+# Convert AIC values to a data frame for plotting
+aic_df <- data.frame(ROI = names(aic_values), AIC = aic_values)
+
+# Find the best performing region (lowest AIC)
+best_region <- aic_df[which.min(aic_df$AIC), ]
+
+# Plot the AIC values
+ggplot(aic_df, aes(x = reorder(ROI, AIC), y = AIC)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  geom_text(aes(label = round(AIC, 2)), hjust = -0.3, size = 3) +
+  geom_point(data = best_region, aes(x = ROI, y = AIC), color = "red", size = 3) +
+  coord_flip() +
+  labs(title = "AIC Values for Each ROI", x = "ROI", y = "AIC") +
+  theme_minimal()
+
+# Print the best performing region
+print(best_region)
+
+# is there a significant difference in the AIC values across regions?
+
+
+```
+
+## Running Simple Log. Reg on FC PPN
+```{r}
+fc_data <- fc_ppn_data
+#rename colum names in pc_data with roi_names
+colnames(fc_data) <- roi_names$V1[1:400]
+# Assuming subject_data, data_fc, response_var, and no covariate
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_ppn_fc <- run_glm_simple_model(subject_data, fc_data, response_var) # nolint
+
+View(glm_model_ppn_fc$coef_pval_df)
+```
+
+# get the above significant coeffs and plot them on the brain
+```{r}
+glm_model_interest <- glm_model_ppn_fc #change to model of interest
+#coefs and pvals from model
+coeffs <- glm_model_interest$coef_pval_df[grep("^X", glm_model_interest$coef_pval_df$Variable), ]
+# Add a column to interactions to indicate significant coefficients
+coeffs$SignificantCoefficient <- ifelse(coeffs$PValue < 0.05, coeffs$Beta, 0)
+#add a column that is Variable 
+coeffs$label <- sub(":.*", "", coeffs$Variable)
+coeffs$label <- sub("X", "", coeffs$label)
+
+# Extract significant interactions
+sig_roi_simple_glm <- coeffs[coeffs$PValue < 0.05, ]
+
+coeffs$sig_OddsRatio <- ifelse(coeffs$PValue < 0.05, coeffs$OddsRatio, 0)
+
+View(sig_roi_simple_glm)
+View(coeffs)
+
+# prepare data for plotting on brain using
+data_ppn_fc_sigodds <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$sig_OddsRatio)
+plot_brain_data(data_ppn_fc_sigodds, "ppn_fc_sigodds_simpleglm")
+# sig beta coeffs plotted
+data_ppn_fc_sigcoefs <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$SignificantCoefficient)
+plot_brain_data(data_ppn_fc_sigcoefs, "ppn_fc_sigbeta_simpleglm")
+
+```
+# attempt to look at the marginal effects of the model
+```{r}
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+glm_model_interest <- glm_model_ppn_fc #change to model of interest
+
+
+region_of_interest <- "X17Networks_LH_VisCent_ExStr_1"
+exists <- region_of_interest %in% names(glm_model_interest$results$X17Networks_LH_VisCent_ExStr_1$marginal_effects)
+
+# Print whether it exists
+print(exists)
+
+# Extract the marginal effects for each variable
+marginal_effects <- lapply(glm_model_interest$results, function(res) {
+  model <- res$model
+  # Calculate marginal effects (predicted probabilities)
+  marginal_effects <- predict(model, type = "response")
+  return(marginal_effects)
+})
+
+# Combine marginal effects into a data frame for easier visualization
+marginal_effects_df <- do.call(cbind, marginal_effects)
+colnames(marginal_effects_df) <- names(glm_model_interest$results)
+
+# View the marginal effects
+View(marginal_effects_df)
+
+
+```
+
+## Running GLM on FC ACh and relevant cognitive scores from TMT-B
+
+```{r}
+fc_data <- fc_nbm_data
+#rename colum names in pc_data with roi_names
+colnames(fc_data) <- roi_names$V1[1:400]
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+#covariates <- c("il8_diff")
+covariates <- c("tmt_diff")
+response_var <- "bin_delirium"
+
+# Run the logistic regression model
+glm_model_nbm_fc_cog <- run_glm_model(cog_data, fc_data, response_var, covariates) # nolint
+View(glm_model_nbm_fc_cog$coef_pval_df)
+
+glm_model_interest <- glm_model_nbm_fc_cog #change to model of interest
+
+#coefs and pvals from model - interactions only
+coeffs <- glm_model_interest$coef_pval_df[grep(":", glm_model_interest$coef_pval_df$Variable), ]
+# Add a column to interactions to indicate significant coefficients
+coeffs$SignificantCoefficient <- ifelse(coeffs$PValue < 0.05, coeffs$Beta, 0)
+#add a column that is Variable 
+coeffs$label <- sub(":.*", "", coeffs$Variable)
+coeffs$label <- sub("X", "", coeffs$label)
+
+# Extract significant interactions
+sig_roi_simple_glm <- coeffs[coeffs$PValue < 0.05, ]
+
+coeffs$sig_OddsRatio <- ifelse(coeffs$PValue < 0.05, coeffs$OddsRatio, 0)
+
+View(sig_roi_simple_glm)
+View(coeffs)
+```
+# given that there are PValues = 0, need to check for multicollinearity
+```{r}
+library(car)
+
+# Example: Loop through each variable in the model
+vif_results <- lapply(glm_model_nbm_fc_cog$results, function(res) {
+  model <- res$model
+  vif_values <- vif(model)
+  return(vif_values)
+})
+
+# Combine VIF results into a data frame
+vif_df <- do.call(rbind, lapply(names(vif_results), function(var) {
+  vif_values <- vif_results[[var]]
+  if (!is.na(vif_values)) {
+    data.frame(Variable = names(vif_values), VIF = vif_values, Predictor = var)
+  } else {
+    NULL
+  }
+}))
+
+# View the VIF results
+View(vif_df)
+```
+
+```{r}
+
+# prepare data for plotting on brain using
+data_nbm_fc_sigodds <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$sig_OddsRatio)
+plot_brain_data(data_nbm_fc_sigodds, "ppn_fc_sigodds_simpleglm")
+# sig beta coeffs plotted
+data_nbm_fc_sigcoefs <- data.frame(label = coeffs$label, SignificantCoefficient = coeffs$SignificantCoefficient)
+plot_brain_data(data_lc_fc_sigcoefs, "ppn_fc_sigbeta_simpleglm")
+
+```
+
+## Variance Inflation Factor (VIF)
+What It Does: VIF measures how much the variance of an estimated regression coefficient increases if your predictors are correlated.
+How to Use It: Calculate VIF for each predictor. A common rule of thumb is that a VIF value above 5 or 10 suggests problematic multicollinearity.
+
+## Avg. FC LC, nbM, PPN in the model
+
+```{r}
+# Fit the logistic regression model for bin_delirium ~ {avg. FC LC} + {avg. FC nbM} + {avg. FC PPN} 
+avg_fc_lc <- rowMeans(fc_lc_data, na.rm = TRUE)
+avg_fc_nbm <- rowMeans(fc_nbm_data, na.rm = TRUE)
+avg_fc_ppn <- rowMeans(fc_ppn_data, na.rm = TRUE)
+
+avg_fc_glm_model <- glm(subject_data$bin_delirium ~  avg_fc_lc + avg_fc_nbm + avg_fc_ppn, family = binomial)
+summary_avg_fc_glm_model <- summary(avg_fc_glm_model)
+
+# get the beta coeffs and pvals
+coef_table <- summary_avg_fc_glm_model$coefficients
+coef_pval_df <- data.frame(
+  Variable = rownames(coef_table),
+  Beta = coef_table[, "Estimate"],
+  PValue = coef_table[, "Pr(>|z|)"],
+  OddsRatio = exp(coef_table[, "Estimate"]) # Calculate odds ratio
+)
+View(coef_pval_df)
+
+```
+
+
+## Relationship between FC for LC, nbM and PPN * IL-8
+```{r}
+# Assuming subject_data, data_fc, response_var, and covariates are defined
+fc_data <- fc_lc_data
+colnames(fc_data) <- roi_names$V1[1:400]
+covariates <- c("il8_diff")
+response_var <- "bin_delirium"
+# Run the logistic regression model
+glm_model_lcfc_il8diff <- run_glm_model(subject_data, fc_data, response_var, covariates) # nolint
+data_model_df = glm_model_lcfc_il8diff$data_model_df #that's the actual data that went into the model
+View(glm_model_lcfc_il8diff$coef_pval_df)
+
+# Extract the interactions between ROI and covariates
+interactions <- glm_model_lcfc_il8diff$coef_pval_df[grep(":", glm_model_lcfc_il8diff$coef_pval_df$Variable), ]
+View(interactions)
+
+# Add a column to interactions to indicate significant coefficients
+interactions$SignificantCoefficient <- ifelse(interactions$PValue < 0.05, interactions$Beta, 0)
+#add a column that is Variable 
+interactions$label <- sub(":.*", "", interactions$Variable)
+interactions$label <- sub("X", "", interactions$label)
+
+
+# Extract significant interactions
+sig_interactions <- interactions[interactions$PValue < 0.05, ]
+View(sig_interactions)
+
+
+# Get the significant odds ratio
+interactions$sig_OddsRatio <- ifelse(interactions$PValue < 0.05, interactions$OddsRatio, 0)
+data <- data.frame(label = interactions$label, SignificantCoefficient = interactions$sig_OddsRatio)
+
+plot_brain_data_oddsratio(data, "LCFC_il8diff_sigodds")
+
+data2 <- data.frame(label = interactions$label, SignificantCoefficient = interactions$SignificantCoefficient)
+plot_brain_data(data2, "LCFC_il8diff_sigcoefs")
+```
